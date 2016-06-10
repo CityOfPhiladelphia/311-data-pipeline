@@ -1,0 +1,5 @@
+arrow==0.7.0
+click==6.6
+-e git+https://github.com/CityOfPhiladelphia/datum.git#egg=datum
+simple-salesforce==0.68.2
+slacker==0.9.16
