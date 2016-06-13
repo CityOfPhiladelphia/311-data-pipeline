@@ -63,7 +63,6 @@ def sync(date, alerts):
             sf_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
 
         print('Fetching new records from Salesforce...')
-        # print(sf_query)
         try:
             sf_rows = sf.query_all(sf_query)['records']
         except SalesforceMalformedRequest:
@@ -79,7 +78,7 @@ def sync(date, alerts):
         update_count = dest_db.execute(DEL_STMT)
         add_count = len(rows) - update_count
 
-        # print('Appending new records...')
+        print('Appending new records...')
         dest_tbl.write(rows)
 
         # We should have added and updated at least 1 record
