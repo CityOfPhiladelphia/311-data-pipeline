@@ -1,4 +1,7 @@
 import sys
+import os
+import logging
+import logging.handlers
 import arrow
 import click
 import cx_Oracle
@@ -9,18 +12,40 @@ from slacker import Slacker
 from common import *
 from config import *
 
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(getattr(logging, LOG_LEVEL))
+log_path = os.path.abspath(LOG_PATH)
+log_par_dir = os.path.dirname(log_path)
+os.makedirs(log_par_dir, exist_ok=True)
+handler = logging.handlers.RotatingFileHandler(\
+                LOG_PATH,\
+                maxBytes=10*1024*1024,\
+                backupCount=5\
+)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
 class HandledError(Exception):
     pass
 
 @click.command()
 @click.option('--date', '-d', help='Retrieve records that were updated on a specific date (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
 @click.option('--alerts/--no-alerts', default=True, help='Turn alerts on/off')
-def sync(date, alerts):
+@click.option('--verbose', '-v', is_flag=True, help='Pring logging statements to the console')
+def sync(date, alerts, verbose):
     status = 'ERROR'
     notes = []
-
+    
     try:
-        print('Starting...')
+        if verbose:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.DEBUG)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+
+        logger.info('Starting...')
         start = arrow.now()
         
         # Connect to Slack
@@ -36,7 +61,7 @@ def sync(date, alerts):
         dest_tbl = dest_db[DEST_TABLE]
         tmp_tbl = dest_db[DEST_TEMP_TABLE]
 
-        print('Truncating temp table...')
+        logger.info('Truncating temp table...')
         tmp_tbl.delete()
 
         sf_query = SF_QUERY
@@ -56,29 +81,29 @@ def sync(date, alerts):
 
         # Otherwise, grab the last updated date from the DB.
         else:
-            print('Getting last updated date...')
+            logger.info('Getting last updated date...')
             start_date = dest_db.execute('select max({}) from {}'\
                                         .format(DEST_UPDATED_FIELD, DEST_TABLE))[0]
             start_date = arrow.get(start_date)
             sf_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
 
-        print('Fetching new records from Salesforce...')
+        logger.info('Fetching new records from Salesforce...')
         try:
             sf_rows = sf.query_all(sf_query)['records']
         except SalesforceMalformedRequest:
             raise HandledError('Could not query Salesforce')
 
-        print('Processing rows...')
+        logger.info('Processing rows...')
         rows = [process_row(sf_row, FIELD_MAP) for sf_row in sf_rows]
 
-        print('Writing to temp table...')
+        logger.info('Writing to temp table...')
         tmp_tbl.write(rows)
 
-        print('Deleting updated records...')
+        logger.info('Deleting updated records...')
         update_count = dest_db.execute(DEL_STMT)
         add_count = len(rows) - update_count
 
-        print('Appending new records...')
+        logger.info('Appending new records...')
         dest_tbl.write(rows)
 
         # We should have added and updated at least 1 record
@@ -97,13 +122,12 @@ def sync(date, alerts):
         status = 'SUCCESS'
 
     except HandledError as e:
-        print(e)
+        logger.warn(e)
         notes.append(str(e))
 
     except Exception as e:
-        print('Unhandled error')
         import traceback
-        print(traceback.format_exc())
+        logger.error('Unhandled error: {}'.format(traceback.format_exc()))
         notes.append('Unhandled error: ' + str(e))
 
     finally:
@@ -118,6 +142,8 @@ def sync(date, alerts):
             if status == 'ERROR':
                 slack_msg += ' @channel'
             slack.chat.post_message(SLACK_CHANNEL, slack_msg)
+        logger.info('Ran successfully. Added {}, updated {}.'\
+                            .format(add_count, update_count))
 
 if __name__ == '__main__':
     sync()
