@@ -31,8 +31,7 @@ def process_row(row, field_map):
         out_row['shape'] = shape
 
     # Truncate description
-    desc_truncated = out_row['description'][:250]
-    out_row['description'] = desc_truncated
+    out_row['description'] = out_row['description'][:250]
     # out_row['description_full'] = out_row['description']
 
     # Map private flag
@@ -56,7 +55,7 @@ def process_row(row, field_map):
         if out_row['status'] == 'Closed':
             status_notes = row['Resolution__c']
         else:
-            status_notes = desc_truncated
+            status_notes = None
     else:
         if out_row['status'] == 'Closed':
             status_notes = row['Close_Reason__c']
