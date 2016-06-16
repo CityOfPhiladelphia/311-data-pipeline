@@ -92,3 +92,4 @@ ENV/
 *.csv
 config.py
 logs/
+*.bat
