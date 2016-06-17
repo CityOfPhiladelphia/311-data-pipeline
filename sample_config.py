@@ -25,3 +25,10 @@ SF_COUNT_QUERY      = ''
 
 SLACK_TOKEN         = ''
 SLACK_CHANNEL       = ''
+
+SMTP_CONFIG          = {
+                        'mailhost':     ('host', port),
+                        'fromaddr':     ,
+                        'toaddrs':      ,
+                        'subject':      ,
+                    }
