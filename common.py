@@ -36,7 +36,7 @@ def process_row(row, field_map):
 
     # Map private flag
     private = out_row['private_case']
-    private = 0 if private == 'false' else 1
+    private = 0 if private in [False, 'false'] else 1
     out_row['private_case'] = private
 
     # Datify date fields
