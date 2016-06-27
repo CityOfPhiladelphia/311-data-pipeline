@@ -52,10 +52,7 @@ def process_row(row, field_map):
 
     # Pick field for status notes
     if out_row['agency_responsible'] in LI_STREETS_WATER:
-        if out_row['status'] == 'Closed':
-            status_notes = row['Resolution__c']
-        else:
-            status_notes = None
+        status_notes = row['Resolution__c']
     else:
         if out_row['status'] == 'Closed':
             status_notes = row['Close_Reason__c']
