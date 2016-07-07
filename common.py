@@ -41,16 +41,18 @@ def process_row(row, field_map):
 
     # Datify date fields
     for date_field_prefix in ['requested', 'updated', 'expected']:
-    # for date_field_prefix in []:
         field = date_field_prefix + '_datetime'
         val = out_row[field]
         try:
+            # Make Arrow object
             a = arrow.get(val)
-            out_row[field] = a.datetime
+            # Convert to local time
+            a_local = a.to('US/Eastern')
+            out_row[field] = a_local.datetime
         except arrow.parser.ParserError:
             out_row[field] = None
 
-    # Pick field for status notes
+    # Pick source field for status notes
     if out_row['agency_responsible'] in LI_STREETS_WATER:
         status_notes = row['Resolution__c']
     else:
