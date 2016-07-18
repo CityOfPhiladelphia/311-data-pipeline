@@ -114,12 +114,15 @@ def sync(date, alerts, verbose):
             if update_count == 0:
                 warnings.warn('No records updated')
 
+            # TODO this check was causing an obscure httplib error 
+            # (essentially, timing out) so disabling it for now
+            
             # Check count against Salesforce
-            sf_count = sf.query_all(SF_COUNT_QUERY)['totalSize']
-            db_count = dest_tbl.count()
-            if sf_count != db_count:
-                warnings.warn('Salesforce has {} rows, database has {}'\
-                                        .format(sf_count, db_count))
+            # sf_count = sf.query_all(SF_COUNT_QUERY)['totalSize']
+            # db_count = dest_tbl.count()
+            # if sf_count != db_count:
+            #     warnings.warn('Salesforce has {} rows, database has {}'\
+            #                             .format(sf_count, db_count))
 
             # If we got here, it was successful.
             status = 'SUCCESS'
