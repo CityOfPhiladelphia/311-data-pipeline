@@ -18,7 +18,7 @@ dest_table.delete()
 
 file_path = sys.argv[1]
 
-with open(file_path, encoding='utf8') as f:
+with open(file_path) as f:
     reader = csv.DictReader(f)
 
     reader_rows = []

@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import date as date_obj
 import logging
 import logging.handlers
 import warnings
@@ -36,7 +37,7 @@ logger.addHandler(logging_smtp_handler)
 @click.command()
 @click.option('--date', '-d', help='Retrieve records that were updated on a specific date (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
 @click.option('--alerts/--no-alerts', default=True, help='Turn alerts on/off')
-@click.option('--verbose', '-v', is_flag=True, help='Pring logging statements to the console')
+@click.option('--verbose', '-v', is_flag=True, help='Print logging statements to the console')
 def sync(date, alerts, verbose):
     status = 'ERROR'
 
@@ -69,9 +70,10 @@ def sync(date, alerts, verbose):
             # If a start date was passed in, handle it.
             if date:
                 warnings.warn('Fetched records for {} only'.format(date))
-
                 try:
-                    start_date = arrow.get(date)
+                    date_comps = [int(x) for x in date.split('-')]
+                    start_date = arrow.get(date_obj(*date_comps), 'US/Eastern')\
+                                      .to('Etc/UTC')
                 except ValueError:
                     raise HandledError('Date parameter is invalid')
                 end_date = start_date.replace(days=1)
@@ -82,11 +84,11 @@ def sync(date, alerts, verbose):
             # Otherwise, grab the last updated date from the DB.
             else:
                 logger.info('Getting last updated date...')
-                start_date = dest_db.execute('select max({}) from {}'\
+                start_date_str = dest_db.execute('select max({}) from {}'\
                                             .format(DEST_UPDATED_FIELD, DEST_TABLE))[0]
-                start_date = arrow.get(start_date)
+                start_date = arrow.get(start_date_str, 'US/Eastern').to('Etc/UTC')
                 sf_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
-
+            
             logger.info('Fetching new records from Salesforce...')
             try:
                 sf_rows = sf.query_all(sf_query)['records']
