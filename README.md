@@ -6,9 +6,9 @@ Philadelphia 311 system.
 ### Deployment
 
 1. `git clone` this repo
-2. Create a virtualenv and `pip install -r requirements.txt`
+2. Create a virtualenv, activate, and `pip install -r requirements.txt`
 3. Rename `sample_config.py` to `config.py` and enter actual values (or download from Lastpass).
-4. Create a batch file to `workon <virtualenvname>` and `python sync.py`. Schedule this to run regularly.
+4. Create a batch file to activate the virtualenv` and `python sync.py`. Schedule this to run regularly.
 
 ### Seeding
 
@@ -24,6 +24,6 @@ The basic usage is:
 
     python sync.py
 
-If the Salesforce query times out you may have to chunk the updates into individual days. To sync just one date, use the `-d` option:
+If the Salesforce query times out you may have to chunk the updates into individual days. To sync just a single day, use the `-d` option:
 
     python sync.py -d 2016-05-18
