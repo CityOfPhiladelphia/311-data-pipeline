@@ -2,22 +2,38 @@ import arrow
 
 # These agencies use different field for their status notes.
 LI_STREETS_WATER = [
-    'License & Inspections', 
+    'License & Inspections',
     'Licenses & Inspections',
     'Licenses & Inspections- L&I',
-    'Streets Department', 
-    'Water Department (PWD)', 
+    'Streets Department',
+    'Water Department (PWD)',
+]
+
+# TEMP
+TEXT_FIELDS = [
+    'status',
+    'status_notes',
+    'service_name',
+    'service_code',
+    'description',
+    'agency_responsible',
+    'service_notice',
+    'address',
+    'zipcode',
+    'media_url',
+    'subject',
+    'type_',
 ]
 
 def process_row(row, field_map):
     """
-    This processes a Salesforce row. Can be either from an API call or dump 
+    This processes a Salesforce row. Can be either from an API call or dump
     file.
     """
     global LI_STREETS_WATER
-    
+
     out_row = {field: row[src_field] for field, src_field in field_map.items()}
-    
+
     # Make geom
     shape = None
     try:
@@ -31,8 +47,11 @@ def process_row(row, field_map):
         out_row['shape'] = shape
 
     # Truncate description
-    out_row['description'] = out_row['description'][:250]
+    try:
+        out_row['description'] = out_row['description'][:250]
     # out_row['description_full'] = out_row['description']
+    except:
+        pass
 
     # Map private flag
     private = out_row['private_case']
@@ -61,5 +80,11 @@ def process_row(row, field_map):
         else:
             status_notes = row['Status_Update__c']
     out_row['status_notes'] = status_notes
+
+    # TEMP: check for excessively long strings until this is
+    # implemented in Datum.
+    global TEXT_FIELDS
+    for text_field in TEXT_FIELDS:
+        out_row[text_field] = (out_row[text_field] or '')[:2000]
 
     return out_row

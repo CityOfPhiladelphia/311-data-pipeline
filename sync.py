@@ -88,7 +88,7 @@ def sync(date, alerts, verbose):
                                             .format(DEST_UPDATED_FIELD, DEST_TABLE))[0]
                 start_date = arrow.get(start_date_str, 'US/Eastern').to('Etc/UTC')
                 sf_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
-            
+
             logger.info('Fetching new records from Salesforce...')
             try:
                 sf_rows = sf.query_all(sf_query)['records']
@@ -114,9 +114,9 @@ def sync(date, alerts, verbose):
             if update_count == 0:
                 warnings.warn('No records updated')
 
-            # TODO this check was causing an obscure httplib error 
+            # TODO this check was causing an obscure httplib error
             # (essentially, timing out) so disabling it for now
-            
+
             # Check count against Salesforce
             # sf_count = sf.query_all(SF_COUNT_QUERY)['totalSize']
             # db_count = dest_tbl.count()
@@ -140,7 +140,7 @@ def sync(date, alerts, verbose):
                                     .format(add_count, update_count)
                 if len(w) > 0:
                     msg += ' - {}.'.format('; '.join([str(x.message) for x in w]))
-                
+
                 # Try to post to Slack
                 try:
                     slack = Slacker(SLACK_TOKEN)
