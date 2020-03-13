@@ -31,9 +31,7 @@ def process_row(row, field_map):
     file.
     """
     global LI_STREETS_WATER
-
     out_row = {field: row[src_field] for field, src_field in field_map.items()}
-
     # Make geom
     shape = None
     try:
@@ -70,6 +68,9 @@ def process_row(row, field_map):
             out_row[field] = a_local.datetime
         except arrow.parser.ParserError:
             out_row[field] = None
+        except TypeError:
+            out_row[field] = None
+
 
     # Pick source field for status notes
     if out_row['agency_responsible'] in LI_STREETS_WATER:
