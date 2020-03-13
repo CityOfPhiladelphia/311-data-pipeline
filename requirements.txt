@@ -1,3 +1,9 @@
+cython
+psycopg2
+pyproj
+shapely
+config
+cx_Oracle
 arrow==0.7.0
 click==6.6
 -e git+https://github.com/CityOfPhiladelphia/datum.git#egg=datum
