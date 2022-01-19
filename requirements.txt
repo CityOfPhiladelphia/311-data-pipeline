@@ -6,6 +6,7 @@ config
 cx_Oracle
 arrow==0.7.0
 click==6.6
--e git+https://github.com/CityOfPhiladelphia/datum.git#egg=datum
+#-e git+https://github.com/CityOfPhiladelphia/datum.git#egg=datum
+petl
 simple-salesforce==0.68.2
 slacker==0.9.16

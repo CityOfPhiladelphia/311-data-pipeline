@@ -9,7 +9,9 @@ import click
 import cx_Oracle
 from simple_salesforce import Salesforce
 from simple_salesforce.api import SalesforceMalformedRequest
-import datum
+# import datum
+import petl as etl
+import cx_Oracle
 from slacker import Slacker
 from common import *
 from config import *
@@ -58,12 +60,16 @@ def sync(date, alerts, verbose):
                             security_token=SF_TOKEN)
 
             # Connect to database
-            dest_db = datum.connect(DEST_DB_DSN)
-            dest_tbl = dest_db[DEST_TABLE]
-            tmp_tbl = dest_db[DEST_TEMP_TABLE]
+            dest_conn = cx_Oracle.connect(DEST_DB_DSN)
+            # dest_db = datum.connect(DEST_DB_DSN)
+            # dest_tbl = dest_db[DEST_TABLE]
+            # tmp_tbl = dest_db[DEST_TEMP_TABLE]
 
             logger.info('Truncating temp table...')
-            tmp_tbl.delete()
+            dest_cur = dest_conn.cursor()
+            dest_cur.execute(f'truncate table {DEST_TEMP_TABLE}')
+            dest_conn.commit()
+            # tmp_tbl.delete()
 
             sf_query = SF_QUERY
 
@@ -84,7 +90,7 @@ def sync(date, alerts, verbose):
             # Otherwise, grab the last updated date from the DB.
             else:
                 logger.info('Getting last updated date...')
-                start_date_str = dest_db.execute('select max({}) from {}'\
+                start_date_str = dest_cur.execute('select max({}) from {}'\
                                             .format(DEST_UPDATED_FIELD, DEST_TABLE))[0]
                 start_date = arrow.get(start_date_str, 'US/Eastern').to('Etc/UTC')
                 sf_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
@@ -99,14 +105,18 @@ def sync(date, alerts, verbose):
             rows = [process_row(sf_row, FIELD_MAP) for sf_row in sf_rows]
 
             logger.info('Writing to temp table...')
-            tmp_tbl.write(rows)
+            rows.todb(DEST_TEMP_TABLE)
+            # tmp_tbl.write(rows)
 
             logger.info('Deleting updated records...')
-            update_count = dest_db.execute(DEL_STMT)
+            update_count = dest_cur.execute(DEL_STMT)
+            # TODO - check what the cursor returns to see if its the same as Datum
+            # update_count = dest_db.execute(DEL_STMT)
             add_count = len(rows) - update_count
 
             logger.info('Appending new records...')
-            dest_tbl.write(rows)
+            rows.appenddb(DEST_TABLE)
+            # dest_tbl.write(rows)
 
             # We should have added and updated at least 1 record
             if add_count == 0:
