@@ -1,12 +1,16 @@
 cython
-psycopg2
-pyproj
-shapely
+psycopg2==2.9.3
+pyproj==3.2.1
+shapely==1.8.0
 config
-cx_Oracle
-arrow==0.7.0
-click==6.6
+cx_Oracle==8.3.0
+arrow==1.2.1
+click==8.0.3
 #-e git+https://github.com/CityOfPhiladelphia/datum.git#egg=datum
-petl
-simple-salesforce==0.68.2
-slacker==0.9.16
+petl==1.7.4
+#-e git+https://github.com/CityOfPhiladelphia/geopetl.git#egg=geopetl
+# Victor's branch which has a fix for a bug which prevents "None" dates from salesforce not being converted for Oracle.
+-e git+https://github.com/CityOfPhiladelphia/geopetl.git@shapes_and_worklfows_2#egg=geopetl
+pytz==2021.3
+simple-salesforce==1.11.4
+

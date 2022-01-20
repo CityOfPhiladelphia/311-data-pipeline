@@ -3,8 +3,9 @@ import csv
 from datetime import datetime
 # import logging
 # import datum
-import petl as etl
 import cx_Oracle
+import petl as etl
+import geopetl
 from common import process_row
 from config import *
 from pprint import pprint
@@ -35,7 +36,7 @@ with open(file_path) as f:
     dest_rows = [process_row(row, FIELD_MAP) for row in reader_rows]
 
 print('Writing...')
-dest_rows.todb(DEST_TABLE)
+dest_rows.tooraclesde(DEST_TABLE)
 # dest_table.write(dest_rows, chunk_size=10000)
 
 print('Took {}'.format(datetime.now() - start))
