@@ -16,7 +16,7 @@ from common import *
 from config import *
 
 # Setup Microsoft Teams connector to our webhook for channel "Citygeo Notifications"
-messageTeams = pymsteams.connectorcard("https://phila.webhook.office.com/webhookb2/763c9a83-0f38-4eb2-abfc-e0f2f41b6fbb@2046864f-68ea-497d-af34-a6629a6cd700/IncomingWebhook/434dfb8c116d472f8f224cfae367cdc1/2f82d684-85a4-4131-95a3-3342e012faeb")
+messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
 
 # LOGGING
 logger = logging.getLogger(__name__)
@@ -155,8 +155,9 @@ def sync(date, alerts, verbose):
             status = 'SUCCESS'
             message = '311-data-pipeline script: Ran successfully. Added {}, updated {}.'.format(add_count, update_count)
             logger.info(message)
-            messageTeams.text(message)
-            messageTeams.send()
+            # we don't need to be spammed with success messages
+            #messageTeams.text(message)
+            #messageTeams.send()
 
         except Exception as e:
             message = ('311-data-pipeline script: Error! Unhandled error: {}'.format(str(e)))
