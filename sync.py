@@ -22,6 +22,7 @@ messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
 logger = logging.getLogger(__name__)
 logger.setLevel(getattr(logging, LOG_LEVEL))
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 # File handler
 log_file_parent_dir = os.path.dirname(os.path.abspath(LOG_PATH))
 os.makedirs(log_file_parent_dir, exist_ok=True)
@@ -32,11 +33,7 @@ logging_file_handler = logging.handlers.RotatingFileHandler(\
 )
 logging_file_handler.setFormatter(formatter)
 logger.addHandler(logging_file_handler)
-# # SMTP handler
-#logging_smtp_handler = logging.handlers.SMTPHandler(**SMTP_CONFIG)
-#logging_smtp_handler.setFormatter(formatter)
-#logging_smtp_handler.setLevel(logging.ERROR)
-#logger.addHandler(logging_smtp_handler)
+
 
 @click.command()
 @click.option('--date', '-d', help='Retrieve records that were updated on a specific date (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
@@ -64,17 +61,16 @@ def sync(date, alerts, verbose):
             # Connect to database
             logger.info("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
             dest_conn = cx_Oracle.connect(DEST_DB_CONN_STRING)
-            # dest_db = datum.connect(DEST_DB_DSN)
-            # dest_tbl = dest_db[DEST_TABLE]
-            # tmp_tbl = dest_db[DEST_TEMP_TABLE]
 
+            # Truncate temp table
             logger.info('Truncating temp table...')
             dest_cur = dest_conn.cursor()
             dest_cur.execute(f'truncate table {DEST_TEMP_TABLE}')
             dest_conn.commit()
-            # tmp_tbl.delete()
 
+            # Formulate Salesforce query
             sf_query = SF_QUERY
+            #sf_debug_query = SF_DEBUG_QUERY
 
             # If a start date was passed in, handle it.
             if date:
@@ -84,7 +80,7 @@ def sync(date, alerts, verbose):
                     start_date = arrow.get(date_obj(*date_comps), 'US/Eastern')\
                                       .to('Etc/UTC')
                 except ValueError as e:
-                    message = ('311-data-pipeline script: Value Error! {}'.format(str(e)))
+                    message = '311-data-pipeline script: Value Error! {}'.format(str(e))
                     messageTeams.text(message)
                     messageTeams.send()
                     raise HandledError('Date parameter is invalid')
@@ -101,39 +97,46 @@ def sync(date, alerts, verbose):
                 start_date_str = dest_cur.fetchone()[0]
                 start_date = arrow.get(start_date_str, 'US/Eastern').to('Etc/UTC')
                 sf_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
+                #sf_debug_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
 
             logger.info('Fetching new records from Salesforce...')
+            print("Salesforce Query: ", sf_query)
             try:
-                sf_rows = sf.query_all(sf_query)['records']
+                sf_rows = sf.query_all_iter(sf_query)
+                #sf_debug_rows = sf.query_all_iter(sf_debug_query)
             except Exception as e:
-                message = ("311-data-pipeline script: Couldn't query Salesforce. Error: {}".format(str(e)))
+                message = "311-data-pipeline script: Couldn't query Salesforce. Error: {}".format(str(e))
                 messageTeams.text(message)
                 messageTeams.send()
-                raise e(message)
-
+                raise HandledError(message)
             logger.info('Processing rows...')
-            rows = [process_row(sf_row, FIELD_MAP) for sf_row in sf_rows]
+            rows = []
+            for i, sf_row in enumerate(sf_rows):
+                if i % 1000 == 0:
+                    print(f'processed {i} rows...')
+                rows.append(process_row(sf_row, FIELD_MAP))
+
+            #Write to a temp csv to avoid memory issues:
+            temp_csv = 'temp_sf_processed_rows.csv'
+            logger.info(f'Writing to temp csv {temp_csv}...')
             rows = etl.fromdicts(rows)
-            #rows = rows.cutout('expected_datetime')
-            #header = rows[0]
-            #header_fmt = [h.upper() for h in header]
-            #rows[0] = header_fmt
-            logger.info('Writing to temp table...')
-            #print(etl.look(rows))
-            #rows.cutout('expected_datetime').tooraclesde(dest_conn, DEST_TEMP_TABLE)
-            # tmp_tbl.write(rows)
+            rows.tocsv(temp_csv)
+
+            logger.info('Reading from temp csv and writing to temp table...')
+            rows = etl.fromcsv(temp_csv)
+            rows.tooraclesde(dest_conn, DEST_TEMP_TABLE)
 
             logger.info('Deleting updated records...')
             dest_cur.execute(UPDATE_COUNT_STMT)
             update_count = dest_cur.fetchone()[0]
             dest_cur.execute(DEL_STMT)
-            # TODO - check what the cursor returns to see if its the same as Datum
-            # update_count = dest_db.execute(DEL_STMT)
+            dest_conn.commit()
+
+            # Calculate number of new records added
             add_count = len(rows) - update_count
 
-            logger.info('Appending new records...')
+            logger.info('Appending new records to prod table...')
             rows.appendoraclesde(dest_conn, DEST_TABLE)
-            # dest_tbl.write(rows)
 
             # We should have added and updated at least 1 record
             if add_count == 0:
@@ -160,7 +163,7 @@ def sync(date, alerts, verbose):
             #messageTeams.send()
 
         except Exception as e:
-            message = ('311-data-pipeline script: Error! Unhandled error: {}'.format(str(e)))
+            message = '311-data-pipeline script: Error! Unhandled error: {}'.format(str(e))
             logger.exception(message)
             messageTeams.text(message)
             messageTeams.send()
@@ -174,16 +177,6 @@ def sync(date, alerts, verbose):
                 if len(w) > 0:
                     msg += ' - {}.'.format('; '.join([str(x.message) for x in w]))
 
-                ## Try to post to Slack
-                #try:
-                #    slack = Slacker(SLACK_TOKEN)
-                #    slack.chat.post_message(SLACK_CHANNEL, msg)
-                #except Exception as e:
-                #    logger.error(
-                #        'Could not post to Slack. '
-                #        'The message was:\n\n{}\n\n'
-                #        'The error was:\n\n{}'.format(msg, e)
-                #    )
 
 if __name__ == '__main__':
     sync()
