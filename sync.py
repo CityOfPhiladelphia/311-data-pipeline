@@ -124,27 +124,18 @@ def sync(date, alerts, verbose):
 
             logger.info('Reading from temp csv and writing to temp table...')
             rows = etl.fromcsv(temp_csv)
-            try:
-                rows.tooraclesde(dest_conn, DEST_TEMP_TABLE)
-            except Exception as e:
-                raise e
+            rows.tooraclesde(dest_conn, DEST_TEMP_TABLE)
             logger.info('Deleting updated records...')
             dest_cur.execute(UPDATE_COUNT_STMT)
             update_count = dest_cur.fetchone()[0]
-            try:
-                dest_cur.execute(DEL_STMT)
-                dest_conn.commit()
-            except Exception as e:
-                raise e
+            dest_cur.execute(DEL_STMT)
+            dest_conn.commit()
 
             # Calculate number of new records added
             add_count = len(rows) - update_count
 
             logger.info('Appending new records to prod table...')
-            try:
-                rows.appendoraclesde(dest_conn, DEST_TABLE)
-            except Exception as e:
-                raise e
+            rows.appendoraclesde(dest_conn, DEST_TABLE)
 
             # We should have added and updated at least 1 record
             if add_count == 0:
@@ -175,6 +166,7 @@ def sync(date, alerts, verbose):
             logger.exception(message)
             messageTeams.text(message)
             messageTeams.send()
+            raise e
 
         finally:
             if alerts:
