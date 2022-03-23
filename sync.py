@@ -100,7 +100,7 @@ def sync(date, alerts, verbose):
                 #sf_debug_query += ' AND (LastModifiedDate > {})'.format(start_date.isoformat())
 
             logger.info('Fetching new records from Salesforce...')
-            print("Salesforce Query: ", sf_query)
+            #print("Salesforce Query: ", sf_query)
             try:
                 sf_rows = sf.query_all_iter(sf_query)
                 #sf_debug_rows = sf.query_all_iter(sf_debug_query)
@@ -112,8 +112,8 @@ def sync(date, alerts, verbose):
             logger.info('Processing rows...')
             rows = []
             for i, sf_row in enumerate(sf_rows):
-                if i % 1000 == 0:
-                    print(f'processed {i} rows...')
+                #if i % 1000 == 0:
+                #    print(f'processed {i} rows...')
                 rows.append(process_row(sf_row, FIELD_MAP))
 
             #Write to a temp csv to avoid memory issues:
@@ -124,19 +124,27 @@ def sync(date, alerts, verbose):
 
             logger.info('Reading from temp csv and writing to temp table...')
             rows = etl.fromcsv(temp_csv)
-            rows.tooraclesde(dest_conn, DEST_TEMP_TABLE)
-
+            try:
+                rows.tooraclesde(dest_conn, DEST_TEMP_TABLE)
+            except Exception as e:
+                raise e
             logger.info('Deleting updated records...')
             dest_cur.execute(UPDATE_COUNT_STMT)
             update_count = dest_cur.fetchone()[0]
-            dest_cur.execute(DEL_STMT)
-            dest_conn.commit()
+            try:
+                dest_cur.execute(DEL_STMT)
+                dest_conn.commit()
+            except Exception as e:
+                raise e
 
             # Calculate number of new records added
             add_count = len(rows) - update_count
 
             logger.info('Appending new records to prod table...')
-            rows.appendoraclesde(dest_conn, DEST_TABLE)
+            try:
+                rows.appendoraclesde(dest_conn, DEST_TABLE)
+            except Exception as e:
+                raise e
 
             # We should have added and updated at least 1 record
             if add_count == 0:
