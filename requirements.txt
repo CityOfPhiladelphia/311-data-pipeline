@@ -1,5 +1,5 @@
 cython
-psycopg2==2.9.3
+psycopg2-binary==2.9.3
 pyproj==3.2.1
 shapely==1.8.0
 config
@@ -13,4 +13,5 @@ petl==1.7.4
 -e git+https://github.com/CityOfPhiladelphia/geopetl.git@shapes_and_worklfows_2#egg=geopetl
 pytz==2021.3
 simple-salesforce==1.11.4
+pymsteams==0.2.0
 
