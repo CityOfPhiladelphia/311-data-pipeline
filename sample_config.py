@@ -59,7 +59,7 @@ SF_TOKEN            = ''
 # Most of the filtering for the public view we do in the database, but the
 # `Type` field is not part of the schema, so we have to filter those cases
 # when querying Salesforce.
-SF_WHERE            = "RecordTypeId != '012G00000014BhVIAU' AND Case_Record_Type__c != '' AND RecordTypeId != ''"
+SF_WHERE            = "RecordTypeId != '012G00000014BhVIAU' AND Case_Record_Type__c not in ('', 'Agency Receivables', 'Revenue Escalation') AND RecordTypeId != ''"
 SF_QUERY            = '''
                         SELECT
                             CaseNumber,
