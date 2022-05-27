@@ -120,14 +120,21 @@ def sync(date, alerts, verbose):
             temp_csv = 'temp_sf_processed_rows.csv'
             logger.info(f'Writing to temp csv {temp_csv}...')
             rows = etl.fromdicts(rows)
+
+            # Remove caret and single quote characters, they are bad for AGO.
+            rows.convert('description', lambda a, row: a.replace(row.description, row.description.strip('<>\'')))
+            # Encode in ASCII to get rid of bad special characters
+            rows.convert('description', lambda u, row: u.replace(row.description, row.description.encode("ascii", "ignore".decode())))
+
             rows.tocsv(temp_csv)
 
             logger.info('Reading from temp csv and writing to temp table...')
             rows = etl.fromcsv(temp_csv)
             rows.tooraclesde(dest_conn, DEST_TEMP_TABLE)
-            logger.info('Deleting updated records...')
             dest_cur.execute(UPDATE_COUNT_STMT)
             update_count = dest_cur.fetchone()[0]
+            logger.info(f'Deleting updated records by matching up whats in the temp table..')
+            logger.info(f'DEL_STMT: {DEL_STMT}')
             dest_cur.execute(DEL_STMT)
             dest_conn.commit()
 
