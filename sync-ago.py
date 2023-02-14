@@ -525,6 +525,9 @@ def sync(day):
     cursor.rowfactory = lambda *args: dict(zip([d[0] for d in cursor.description], args))
     databridge_matches = cursor.fetchall()
 
+    if len(databridge_matches) == 0:
+        print('Nothing to update!')
+        return
     print(f'\nTotal amount of rows to update in AGO from Databridge: {len(databridge_matches)}\n')
     first = databridge_matches[0]['SERVICE_REQUEST_ID']
     #print(f'First in databridge return, service_request_id: {first}')
