@@ -283,6 +283,10 @@ def process_rows(sf_rows):
     #dest_conn.commit()
 
     # We should have added and updated at least 1 record
+    if add_count:
+        print(f'Added {add_count} rows.')
+    if update_count:
+        print(f'Added {update_count} rows.')
     if add_count == 0:
         warnings.warn('No records added')
     if update_count == 0:
