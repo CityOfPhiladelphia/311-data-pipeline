@@ -4,6 +4,12 @@ TEST=False
 LOG_LEVEL               = 'INFO'
 LOG_PATH                = './logs/sync.log'
 
+# Secrets for sync-ago.py
+MAPS_PASSWORD = 'password'
+SALESFORCE_AGO_ITEMID = '1234abcdf'
+DATABRIDGE_SDE_PASSWORD = 'password'
+DATABRIDGE_HOST = 'database.host'
+
 # These describe the destination (enterprise) dataset.
 DEST_DB_DSN             = ''
 DEST_PROD_DSN = ''
