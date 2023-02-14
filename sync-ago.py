@@ -16,21 +16,19 @@ import click
 
 
 @click.command()
-@click.option('--day', '-d', help='Retrieve records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
+@click.option('--day', '-d', help='Retrieve and update records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
 def sync(day):
     # They're the same for saleforce so we should need no projecting of points.
+    # Hardcode this to make the code work, but we can modularize this lter.
     IN_SRID = 4326
-    #AGO_SRID = 3857
     AGO_SRID = 4326
-    #AGO_LATESTWKID = 102100
-    AGO_LATESTWKID = 4326
+
+    PRIMARY_KEY = 'SERVICE_REQUEST_ID'
 
     '''transformer needs to be defined outside of our row loop to speed up projections.'''
     TRANSFORMER = pyproj.Transformer.from_crs(f'epsg:{IN_SRID}',
                                                f'epsg:{AGO_SRID}',
                                                always_xy=True)
-
-    PRIMARY_KEY = 'SERVICE_REQUEST_ID'
 
     print('Connecting to AGO...')
     org = GIS(url='https://phl.maps.arcgis.com',
@@ -67,6 +65,182 @@ def sync(day):
 
     cursor = database_connect()
     print("Connected to Oracle!\n")
+
+
+    def project_and_format_shape(wkt_shape):
+        ''' Helper function to help format spatial fields properly for AGO '''
+        # Note: list of coordinates for polygons are called "rings" for some reason
+        def format_ring(poly):
+            if IN_SRID != AGO_SRID:
+                transformed = shapely_transformer(TRANSFORMER.transform, poly)
+                xlist = list(transformed.exterior.xy[0])
+                ylist = list(transformed.exterior.xy[1])
+                coords = [list(x) for x in zip(xlist, ylist)]
+                return coords
+            else:
+                xlist = list(poly.exterior.xy[0])
+                ylist = list(poly.exterior.xy[1])
+                coords = [list(x) for x in zip(xlist, ylist)]
+                return coords
+        def format_path(line):
+            if IN_SRID != AGO_SRID:
+                transformed = shapely_transformer(TRANSFORMER.transform, line)
+                xlist = list(transformed.coords.xy[0])
+                ylist = list(transformed.coords.xy[1])
+                coords = [list(x) for x in zip(xlist, ylist)]
+                return coords
+            else:
+                xlist = list(line.coords.xy[0])
+                ylist = list(line.coords.xy[1])
+                coords = [list(x) for x in zip(xlist, ylist)]
+                return coords
+        if 'POINT' in wkt_shape:
+            pt = shapely.wkt.loads(wkt_shape)
+            if IN_SRID != AGO_SRID:
+                x, y = TRANSFORMER.transform(pt.x, pt.y)
+                return x, y
+            else:
+                return pt.x, pt.y
+        elif 'MULTIPOLYGON' in wkt_shape:
+            multipoly = shapely.wkt.loads(wkt_shape)
+            assert multipoly.is_valid
+            list_of_rings = []
+            for poly in multipoly:
+                assert poly.is_valid
+                # reference for polygon projection: https://gis.stackexchange.com/a/328642
+                ring = format_ring(poly)
+                list_of_rings.append(ring)
+            return list_of_rings
+        elif 'POLYGON' in wkt_shape:
+            poly = shapely.wkt.loads(wkt_shape)
+            assert poly.is_valid
+            ring = format_ring(poly)
+            return ring
+        elif 'LINESTRING' in wkt_shape:
+            path = shapely.wkt.loads(wkt_shape)
+            path = format_path(path)
+            return path
+        else:
+            raise NotImplementedError('Shape unrecognized.')
+
+
+    def return_coords_only(self,wkt_shape):
+        ''' Do not perform projection, simply extract and return our coords lists.'''
+        poly = shapely.wkt.loads(wkt_shape)
+        return poly.exterior.xy[0], poly.exterior.xy[1]
+
+
+    def format_row(row):
+        clean_columns = ['description', 'status_notes']
+        # Clean our designated row of non-utf-8 characters or other undesirables that makes AGO mad.
+        # If you pass multiple values separated by a comma, it will perform on multiple colmns
+        for column in clean_columns:
+            if row[column] == None:
+                pass
+            else:
+                row[column] = row[column].encode("ascii", "ignore").decode()
+                row[column] = row[column].replace('\'', '')
+                row[column] = row[column].replace('"', '')
+                row[column] = row[column].replace('<', '')
+                row[column] = row[column].replace('>', '')
+
+        # Convert cx_Oracle.LOB to simple string via the read method
+        # Source: https://stackoverflow.com/a/12590977
+        new_row['shape'] = new_row['shape'].read()
+
+        # Convert None values to empty string
+        # but don't convert date fields to empty strings,
+        # Apparently arcgis API needs a None value to properly pass a value as 'null' to ago.
+        for col in row.keys():
+            if row[col] == None:
+                if 'datetime' not in col:
+                    row[col] = ''
+        for col in row.keys():
+            if 'datetime' in col and row[col] == '':
+                row[col] = None
+        # Check to make sure rows aren't incorrectly set as UTC. Convert to EST/EDT if so.
+            if row[col]:
+                if 'datetime' in col and '+0000' in row[col]:
+                    dt_obj = datetime.strptime(row[col], "%Y-%m-%d %H:%M:%S %z")
+                    local_dt_obj = obj.astimezone(pytz.timezone('US/Eastern'))
+                    row[col] = local_db_obj.strftime("%Y-%m-%d %H:%M:%S %z")
+
+        # remove the shape field so we can replace it with SHAPE with the spatial reference key
+        # and also store in 'wkt' var (well known text) so we can project it
+        wkt = row.pop('shape')
+
+        # Oracle sde.st_astext() function returns empty geometry as this string
+        # Set to empty string so the next conditional works.
+        if wkt == 'POINT EMPTY':
+            wkt = ''
+
+        # If the geometry cell is blank, properly pass a NaN or empty value to indicate so.
+        if not (bool(wkt.strip())):
+            if GEOMETRIC == 'esriGeometryPoint':
+                geom_dict = {"x": 'NaN',
+                             "y": 'NaN',
+                             "spatial_reference": {"wkid": AGO_SRID}
+                             }
+                row_to_append = {"attributes": row,
+                                "geometry": geom_dict
+                                }
+            elif GEOMETRIC == 'esriGeometryPolyline':
+                geom_dict = {"paths": [],
+                             "spatial_reference": {"wkid": AGO_SRID}
+                             }
+                row_to_append = {"attributes": row,
+                                 "geometry": geom_dict
+                                 }
+            elif GEOMETRIC == 'esriGeometryPolygon':
+                geom_dict = {"rings": [],
+                             "spatial_reference": {"wkid": AGO_SRID}
+                             }
+                row_to_append = {"attributes": row,
+                                 "geometry": geom_dict
+                                 }
+            else:
+                raise TypeError(f'Unexpected geomtry type!: {GEOMETRIC}')
+        # For different types we can consult this for the proper json format:
+        # https://developers.arcgis.com/documentation/common-data-types/geometry-objects.htm
+        if 'POINT' in wkt:
+            projected_x, projected_y = project_and_format_shape(wkt)
+                           # Format our row, following the docs on this one, see section "In [18]":
+            # https://developers.arcgis.com/python/sample-notebooks/updating-features-in-a-feature-layer/
+            # create our formatted point geometry
+            geom_dict = {"x": projected_x,
+                         "y": projected_y,
+                         "spatial_reference": {"wkid": AGO_SRID}
+                         }
+            row_to_append = {"attributes": row,
+                             "geometry": geom_dict}
+        elif 'MULTIPOINT' in wkt:
+            raise NotImplementedError("MULTIPOINTs not implemented yet..")
+        elif 'MULTIPOLYGON' in wkt:
+            rings = project_and_format_shape(wkt)
+            geom_dict = {"rings": rings,
+                         "spatial_reference": {"wkid": AGO_SRID}
+                         }
+            row_to_append = {"attributes": row,
+                             "geometry": geom_dict
+                             }
+        elif 'POLYGON' in wkt:
+            #xlist, ylist = return_coords_only(wkt)
+            ring = project_and_format_shape(wkt)
+            geom_dict = {"rings": [ring],
+                         "spatial_reference": {"wkid": AGO_SRID}
+                         }
+            row_to_append = {"attributes": row,
+                             "geometry": geom_dict
+                             }
+        elif 'LINESTRING' in wkt:
+            paths = project_and_format_shape(wkt)
+            geom_dict = {"paths": [paths],
+                         "spatial_reference": {"wkid": AGO_SRID}
+                         }
+            row_to_append = {"attributes": row,
+                             "geometry": geom_dict
+                             }
+        return row_to_append
 
 
     def edit_features(row, method='adds'):
@@ -149,186 +323,7 @@ def sync(day):
             else:
                 success = True
 
-
-    def project_and_format_shape(wkt_shape):
-        ''' Helper function to help format spatial fields properly for AGO '''
-        # Note: list of coordinates for polygons are called "rings" for some reason
-        def format_ring(poly):
-            if IN_SRID != AGO_SRID:
-                transformed = shapely_transformer(TRANSFORMER.transform, poly)
-                xlist = list(transformed.exterior.xy[0])
-                ylist = list(transformed.exterior.xy[1])
-                coords = [list(x) for x in zip(xlist, ylist)]
-                return coords
-            else:
-                xlist = list(poly.exterior.xy[0])
-                ylist = list(poly.exterior.xy[1])
-                coords = [list(x) for x in zip(xlist, ylist)]
-                return coords
-        def format_path(line):
-            if IN_SRID != AGO_SRID:
-                transformed = shapely_transformer(TRANSFORMER.transform, line)
-                xlist = list(transformed.coords.xy[0])
-                ylist = list(transformed.coords.xy[1])
-                coords = [list(x) for x in zip(xlist, ylist)]
-                return coords
-            else:
-                xlist = list(line.coords.xy[0])
-                ylist = list(line.coords.xy[1])
-                coords = [list(x) for x in zip(xlist, ylist)]
-                return coords
-        if 'POINT' in wkt_shape:
-            pt = shapely.wkt.loads(wkt_shape)
-            if IN_SRID != AGO_SRID:
-                x, y = TRANSFORMER.transform(pt.x, pt.y)
-                return x, y
-            else:
-                return pt.x, pt.y
-        elif 'MULTIPOLYGON' in wkt_shape:
-            multipoly = shapely.wkt.loads(wkt_shape)
-            assert multipoly.is_valid
-            list_of_rings = []
-            for poly in multipoly:
-                assert poly.is_valid
-                # reference for polygon projection: https://gis.stackexchange.com/a/328642
-                ring = format_ring(poly)
-                list_of_rings.append(ring)
-            return list_of_rings
-        elif 'POLYGON' in wkt_shape:
-            poly = shapely.wkt.loads(wkt_shape)
-            assert poly.is_valid
-            ring = format_ring(poly)
-            return ring
-        elif 'LINESTRING' in wkt_shape:
-            path = shapely.wkt.loads(wkt_shape)
-            path = format_path(path)
-            return path
-        else:
-            raise NotImplementedError('Shape unrecognized.')
-
-
-    def return_coords_only(self,wkt_shape):
-        ''' Do not perform project, simply extract and return our coords lists.'''
-        poly = shapely.wkt.loads(wkt_shape)
-        return poly.exterior.xy[0], poly.exterior.xy[1]
-
-
-    def format_row(row):
-        clean_columns = ['description', 'status_notes']
-        # Clean our designated row of non-utf-8 characters or other undesirables that makes AGO mad.
-        # If you pass multiple values separated by a comma, it will perform on multiple colmns
-        for column in clean_columns:
-            if row[column] == None:
-                pass
-            else:
-                row[column] = row[column].encode("ascii", "ignore").decode()
-                row[column] = row[column].replace('\'', '')
-                row[column] = row[column].replace('"', '')
-                row[column] = row[column].replace('<', '')
-                row[column] = row[column].replace('>', '')
-
-        # Convert None values to empty string
-        # but don't convert date fields to empty strings,
-        # Apparently arcgis API needs a None value to properly pass a value as 'null' to ago.
-        for col in row.keys():
-            if row[col] == None:
-                if 'datetime' not in col:
-                    row[col] = ''
-        for col in row.keys():
-            if 'datetime' in col and row[col] == '':
-                row[col] = None
-        # Check to make sure rows aren't incorrectly set as UTC. Convert to EST/EDT if so.
-            if row[col]:
-                if 'datetime' in col and '+0000' in row[col]:
-                    dt_obj = datetime.strptime(row[col], "%Y-%m-%d %H:%M:%S %z")
-                    local_dt_obj = obj.astimezone(pytz.timezone('US/Eastern'))
-                    row[col] = local_db_obj.strftime("%Y-%m-%d %H:%M:%S %z")
-
-        # remove the shape field so we can replace it with SHAPE with the spatial reference key
-        # and also store in 'wkt' var (well known text) so we can project it
-        wkt = row.pop('shape')
-
-        # Oracle sde.st_astext() function returns empty geometry as this string
-        # Set to empty string so the next conditional works.
-        if wkt == 'POINT EMPTY':
-            wkt = ''
-
-        # If the geometry cell is blank, properly pass a NaN or empty value to indicate so.
-        if not (bool(wkt.strip())):
-            if GEOMETRIC == 'esriGeometryPoint':
-                geom_dict = {"x": 'NaN',
-                             "y": 'NaN',
-                             #"spatial_reference": {"wkid": AGO_LATESTWKID, "latestWkid": AGO_SRID}
-                             "spatial_reference": {"wkid": AGO_SRID}
-                             }
-                row_to_append = {"attributes": row,
-                                "geometry": geom_dict
-                                }
-            elif GEOMETRIC == 'esriGeometryPolyline':
-                geom_dict = {"paths": [],
-                             #"spatial_reference": {"wkid": AGO_LATESTWKID, "latestWkid": AGO_SRID}
-                             "spatial_reference": {"wkid": AGO_SRID}
-                             }
-                row_to_append = {"attributes": row,
-                                 "geometry": geom_dict
-                                 }
-            elif GEOMETRIC == 'esriGeometryPolygon':
-                geom_dict = {"rings": [],
-                             #"spatial_reference": {"wkid": AGO_LATESTWKID, "latestWkid": AGO_SRID}
-                             "spatial_reference": {"wkid": AGO_SRID}
-                             }
-                row_to_append = {"attributes": row,
-                                 "geometry": geom_dict
-                                 }
-            else:
-                raise TypeError(f'Unexpected geomtry type!: {GEOMETRIC}')
-        # For different types we can consult this for the proper json format:
-        # https://developers.arcgis.com/documentation/common-data-types/geometry-objects.htm
-        if 'POINT' in wkt:
-            projected_x, projected_y = project_and_format_shape(wkt)
-                           # Format our row, following the docs on this one, see section "In [18]":
-            # https://developers.arcgis.com/python/sample-notebooks/updating-features-in-a-feature-layer/
-            # create our formatted point geometry
-            geom_dict = {"x": projected_x,
-                         "y": projected_y,
-                         #"spatial_reference": {"wkid": AGO_SRID, "latestWkid": AGO_LATESTWKID}
-                         "spatial_reference": {"wkid": AGO_SRID}
-                         }
-            row_to_append = {"attributes": row,
-                             "geometry": geom_dict}
-        elif 'MULTIPOINT' in wkt:
-            raise NotImplementedError("MULTIPOINTs not implemented yet..")
-        elif 'MULTIPOLYGON' in wkt:
-            rings = project_and_format_shape(wkt)
-            geom_dict = {"rings": rings,
-                         #"spatial_reference": {"wkid": AGO_SRID, "latestWkid": AGO_LATESTWKID}
-                         "spatial_reference": {"wkid": AGO_SRID}
-                         }
-            row_to_append = {"attributes": row,
-                             "geometry": geom_dict
-                             }
-        elif 'POLYGON' in wkt:
-            #xlist, ylist = return_coords_only(wkt)
-            ring = project_and_format_shape(wkt)
-            geom_dict = {"rings": [ring],
-                         #"spatial_reference": {"wkid": AGO_SRID, "latestWkid": AGO_LATESTWKID}
-                         "spatial_reference": {"wkid": AGO_SRID}
-                         }
-            row_to_append = {"attributes": row,
-                             "geometry": geom_dict
-                             }
-        elif 'LINESTRING' in wkt:
-            paths = project_and_format_shape(wkt)
-            geom_dict = {"paths": [paths],
-                         #"spatial_reference": {"wkid": AGO_SRID, "latestWkid": AGO_LATESTWKID}
-                         "spatial_reference": {"wkid": AGO_SRID}
-                         }
-            row_to_append = {"attributes": row,
-                             "geometry": geom_dict
-                             }
-        return row_to_append
-
-
+    # Wrapped AGO function in a retry while loop because AGO is very unreliable.
     def delete_features(wherequery):
         count = 0
         while True:
@@ -350,19 +345,21 @@ def sync(day):
                     continue
                 # Gateway error recieved, sleep for a bit longer.
                 if '502' in str(e):
-                    print(f'Dumb error received, retrying. Error: {str(e)}')
+                    print(f'502 Gateway error received, retrying. Error: {str(e)}')
                     count += 1
-                    sleep(10)
+                    sleep(15)
                     continue
                 else:
                     raise e
 
+    # Wrapped AGO function in a retry while loop because AGO is very unreliable.
     def query_features(wherequery=None, outstats=None):
         count = 0
         while True:
             if count > 5:
                 raise RuntimeError("AGO keeps failing on our query!")
             try:
+                # outstats is used for grabbing the MAX value of updated_datetime.
                 if outstats:
                     output = LAYER_OBJECT.query(outStatistics=outstats, outFields='*')
                 elif wherequery:
@@ -382,29 +379,16 @@ def sync(day):
                     continue
                 # Gateway error recieved, sleep for a bit longer.
                 if '502' in str(e):
-                    print(f'Dumb error received, retrying. Error: {str(e)}')
+                    print(f'502 Gateway error received, retrying. Error: {str(e)}')
                     count += 1
-                    sleep(10)
+                    sleep(15)
                     continue
                 else:
                     raise e
 
 
-    LOCAL_TZ = pytz.timezone('US/Eastern')
-    UTC = pytz.timezone('UTC')
-
-    def convert_time(utc_dt, tz):
-        date = utc_dt.replace(tzinfo=pytz.utc).astimezone(tz)
-        return date
-
-    def is_dst(when):
-        '''Given the name of Timezone will attempt determine if that timezone is in Daylight Saving Time now (DST)'''
-        return when.dst() != datetime.timedelta(0)
-
-
     ##########################################
-    # New script to sync from Databridge to AGO
-    #
+    # Steps
     # 1. Grab the max date in AGO
     # 2. Compare against max date in databridge and grab rows between that date and the latest
     # 3. Query record in AGO and delete row in if it exists
@@ -431,20 +415,26 @@ def sync(day):
             raise AssertionError(f'Unexpected column!!: {i}')
         headers_list.append(i[0])
 
+    # We don't want this in our SELECT statements, we'll instead grab them later like this:
+    # sde.st_astext(SHAPE) as SHAPE
+    # AGO also doesn't return shape as a field so we need this out for a field comparison.
     headers_list.remove('SHAPE')
 
     # Original list without our 'to_char' conversions so we can do an accurate field comparison to AGO
     # Copy the list so it's not just a memory reference
     headers_list_original = headers_list.copy()
 
+    headers_list.append('sde.st_astext(SHAPE) as SHAPE')
+
     # NOTE: cx_Oracle has a bug where it doesn't return timezone information
     # so dates come in timezone naive.
     # https://github.com/oracle/python-cx_Oracle/issues/13
-    # Convert datetime to string
+    # To get around this, convert datetime to string
     for i,header in enumerate(headers_list):
         if 'DATETIME' in header:
             headers_list[i] = "to_char({0},'YYYY-MM-DD HH24:MI:SS TZHTZM') AS {0}".format(header)
 
+    # Join into string to be used in select statements.
     headers_str = ','.join(headers_list)
 
     # Compare headers/fields vs AGO, lowercase for proper comparison
@@ -460,7 +450,7 @@ def sync(day):
     ###############################
     # 1. Grab the max date in AGO
 
-    # check if start date was passed
+    # check if start date was passed, we'll grab records from that point forward.
     if day:
         max_ago_dt = datetime.datetime.strptime(day, '%Y-%m-%d')
         max_ago_dt_str = max_ago_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -469,9 +459,9 @@ def sync(day):
         end_dt_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     else:
-        outstats = [{"statisticType":"max", "onStatisticField": "UPDATED_DATETIME"}]
-        #latest_time = LAYER_OBJECT.query(outStatistics=outstat, outFields='*')
+        # Grab the max UPDATED_DATETIME from AGO.
         print('\nGrabbing max updated_datetime from AGO...')
+        outstats = [{"statisticType":"max", "onStatisticField": "UPDATED_DATETIME"}]
         latest_time = query_features(outstats=outstats)
 
         # It gets returned as a unix timestamp, so convert it back.
@@ -484,10 +474,10 @@ def sync(day):
         # AGO is doing something funny where it returns the timestamp as timezone naive UTC
         # so we get a UTC timestamp, but when we attempt to convert to local time, it again subtracts 4 or 5 hours
         # Which then puts us 8 hours behind...
-
         # We need this in local time to query Databridge effectively, so we'll manually adjust it.
-        # So my solution is to simply add the hours myself and keep it timezone naive *shrug
-        if is_dst(max_ago_dt):
+        # So my solution is to simply check if the timestamp is in DST or not,
+        # add the hours myself and then keep it timezone naive *shrug
+        if max_ago_dt.dst() != datetime.timedelta(0):
             max_ago_dt = max_ago_dt + datetime.timedelta(hours=4)
         else:
             max_ago_dt = max_ago_dt + datetime.timedelta(hours=5)
@@ -498,10 +488,7 @@ def sync(day):
 
     ############################################
     # 2. Compare against max date in databridge
-    # grab updated_datetime and order by it so we can iterate through service_record_ids in proper temporal order.
-
-    # override to redo records from this date onwards 
-    #max_ago_dt_str = '2022-06-07 12:00:00'
+    # grab updated_datetime and order by it so we can iterate through our primary keys in proper temporal order.
 
     # If a day param was a passed, grab only records for that day.
     if day:
@@ -512,6 +499,7 @@ def sync(day):
             AND UPDATED_DATETIME < to_date('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
             ORDER BY UPDATED_DATETIME ASC
         '''
+    # Else grab recrods from the max updated_datetime we have in AGO and forward
     else:
         databridge_stmt=f'''
         SELECT {PRIMARY_KEY},UPDATED_DATETIME
@@ -520,7 +508,7 @@ def sync(day):
             ORDER BY UPDATED_DATETIME ASC
         '''
 
-    print(f'Grabbing all SERVICE_RECORD_IDs with same date or greater with query: {databridge_stmt}')
+    print(f'Grabbing all {PRIMARY_KEY}s with same date or greater with query: {databridge_stmt}')
     cursor.execute(databridge_stmt)
     cursor.rowfactory = lambda *args: dict(zip([d[0] for d in cursor.description], args))
     databridge_matches = cursor.fetchall()
@@ -537,22 +525,20 @@ def sync(day):
     adds = []
     delsquery = '' 
     for row in databridge_matches:
-        service_request_id = row['SERVICE_REQUEST_ID']
-        #print('\nEvaluating {0} "{1}"'.format(PRIMARY_KEY, row['SERVICE_REQUEST_ID']))
+        working_primary_key = row[PRIMARY_KEY]
 
         # query record in AGO and delete row in if it exists
-        wherequery = f'{PRIMARY_KEY} = {service_request_id}'
-        #ago_row = LAYER_OBJECT.query(where=wherequery)
+        wherequery = f'{PRIMARY_KEY} = {working_primary_key}'
+
         # Wrap query in a while loop cause it times out sometimes
         ago_row = query_features(wherequery)
 
         # Grab the full row from databridge
         databridge_stmt = f'''
-            SELECT {headers_str},sde.st_astext(SHAPE) as SHAPE
+            SELECT {headers_str}
                 FROM GIS_311.SALESFORCE_CASES
-                WHERE SERVICE_REQUEST_ID = {service_request_id}
+                WHERE {PRIMARY_KEY}  = {working_primary_key}
         '''
-        #print(f'Running databridge_stmt: {databridge_stmt}')
         cursor.execute(databridge_stmt)
         cursor.rowfactory = lambda *args: dict(zip([d[0] for d in cursor.description], args))
         new_row = cursor.fetchall()
@@ -574,31 +560,33 @@ def sync(day):
         # Access our row dictionary from the return of cursor.fetchall()
         new_row = new_row[0]
 
-        # Convert cx_Oracle.LOB to simple string via the read method
-        # Source: https://stackoverflow.com/a/12590977
-        new_row['SHAPE'] = new_row['SHAPE'].read()
 
         # Lowercase all keys, as AGO expects lowercase field names.
         # Edaait: not sure if this is actually true.
         new_row = {k.lower(): v for k, v in new_row.items()}
 
+        # apply various transformations, projections (if necessary) and fixes to our row.
+        # Format it into proper format for uploading to AGO
+        # Reference: https://developers.arcgis.com/python/guide/editing-features/
         row_to_append = format_row(new_row)
+
+        # A true AGO upsert requries some more complex comparing between the rows we have
+        # what's in AGO, and also matching up the objectid. We can avoid that by simply
+        # deleting the row, which we'll then add again ourselves.
         if not ago_row.sdf.empty:
-            #print(f'Row to be deleted: {PRIMARY_KEY}: {service_request_id}')
-            delsquery = delsquery + f' {PRIMARY_KEY} = {service_request_id} OR'
+            delsquery = delsquery + f' {PRIMARY_KEY} = {working_primary_key} OR'
 
         #if ago_row.sdf.empty:
-            #print(f'New row: {PRIMARY_KEY}: {service_request_id}')
+            #print(f'New row: {PRIMARY_KEY}: {working_primary_key}')
+
         adds.append(row_to_append)
 
         # Accumulate our adds and deletes like so until they reach these limits
         # Then apply in batch
         # A bit messy but it should (probably) save some strain on ESRI's infra and go faster
         # then one at a time.
+        # AGO will also fail hard if our delsquery of multiple OR statements gets too long.
         if len(adds) >= 20 or len(delsquery) >= 350:
-            # Print the last service_request_id of the last item in our adds
-            # just so we have some sense of where we're at, if say we're staring at
-            # logs and going insane.
             print('\nApplying batch dels and adds to AGO..')
             if delsquery:
                 # This is messy but slice it to remove trailing ' OR' otherwise the query is invalid
@@ -606,7 +594,10 @@ def sync(day):
                 delete_features(delsquery[:-3])
                 print(f'Deleted {delsquery.count("=")} rows.')
             if adds:
-                print('On service_request_id: {}'.format(adds[-1:][0]['attributes']['service_request_id']))
+                # Print the last primary_key of the last item in our adds
+                # just so we have some sense of where we're at, if say we're staring at
+                # logs and going insane.
+                print('On {}: {}'.format(PRIMARY_KEY.lower(), adds[-1:][0]['attributes'][PRIMARY_KEY.lower()]))
                 #print(f'adds: {adds}')
                 edit_features(adds, method='adds')
                 print(f'Added {len(adds)} rows.')
@@ -621,7 +612,7 @@ def sync(day):
         delete_features(delsquery[:-3])
         print(f'Deleted {delsquery.count("=")} rows.')
     if adds:
-        print('On service_request_id: {}'.format(adds[-1:][0]['attributes']['service_request_id']))
+        print('On {}: {}'.format(PRIMARY_KEY.lower(), adds[-1:][0]['attributes'][PRIMARY_KEY.lower()]))
         #print(f'adds: {adds}')
         edit_features(adds, method='adds')
         print(f'Added {len(adds)} rows.')

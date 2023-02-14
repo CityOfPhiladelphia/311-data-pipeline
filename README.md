@@ -18,7 +18,7 @@ Philadelphia 311 system.
 
 ### Syncing
 
-`sync.py` will check the database table for the most recent `updated_datetime` and get all records from Salesforce that have been updated since then. For a description of command-line arguments, see `python sync.py --help`.
+`sync.py` will check the database table for the most recent `updated_datetime` and get all records from Salesforce that have been updated since then.
 
 The basic usage is:
 
@@ -27,3 +27,10 @@ The basic usage is:
 If the Salesforce query times out you may have to chunk the updates into individual days. To sync just a single day, use the `-d` option:
 
     python sync.py -d 2016-05-18
+
+`sync-ago.py` will check the salesforce_cases dataset in AGO for the most recent `updated_datetime` and then use that to get all records in databridge that have been updated since then. 
+It will then upsert into AGO in small batches of these updated rows after formatting the rows properly for AGO to accept them.
+
+You can also run sync-ago.py to refresh for a whole day:
+
+    python sync-ago.py -d 2016-05-18

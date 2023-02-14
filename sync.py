@@ -113,6 +113,10 @@ def sync(day):
             #    print(f'processed {i} rows...')
             rows.append(process_row(sf_row, FIELD_MAP))
 
+        if not rows:
+            print('Nothing received from Salesforce, nothing to update!')
+            return
+
         #Write to a temp csv to avoid memory issues:
         temp_csv = 'temp_sf_processed_rows.csv'
         print(f'Writing to temp csv "{temp_csv}"...')
@@ -176,6 +180,7 @@ def sync(day):
 		##########################
 
 
+        print(f'Executing UPDATE_COUNT_STMT: {UPDATE_COUNT_STMT}')
         dest_cur.execute(UPDATE_COUNT_STMT)
         update_count = dest_cur.fetchone()[0]
         print(f'Deleting updated records by matching up whats in the temp table..')
