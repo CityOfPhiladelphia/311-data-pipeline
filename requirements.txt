@@ -1,3 +1,4 @@
+arcgis==1.7.1
 cython
 psycopg2-binary==2.9.3
 pyproj==3.2.1
