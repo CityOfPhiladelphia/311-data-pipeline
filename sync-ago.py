@@ -131,7 +131,16 @@ def sync(day):
 
 
     def format_row(row):
-        clean_columns = ['description', 'status_notes']
+
+        # Convert cx_Oracle.LOB to simple string via the read method
+        # Source: https://stackoverflow.com/a/12590977
+        new_row['shape'] = new_row['shape'].read()
+
+        # Description full is a LOB object too if it's not empty.
+        if new_row['description_full']:
+            new_row['description_full'] = new_row['description_full'].read()
+
+        clean_columns = ['description', 'description_full', 'status_notes']
         # Clean our designated row of non-utf-8 characters or other undesirables that makes AGO mad.
         # If you pass multiple values separated by a comma, it will perform on multiple colmns
         for column in clean_columns:
@@ -143,10 +152,6 @@ def sync(day):
                 row[column] = row[column].replace('"', '')
                 row[column] = row[column].replace('<', '')
                 row[column] = row[column].replace('>', '')
-
-        # Convert cx_Oracle.LOB to simple string via the read method
-        # Source: https://stackoverflow.com/a/12590977
-        new_row['shape'] = new_row['shape'].read()
 
         # Convert None values to empty string
         # but don't convert date fields to empty strings,
@@ -586,7 +591,7 @@ def sync(day):
         # A bit messy but it should (probably) save some strain on ESRI's infra and go faster
         # then one at a time.
         # AGO will also fail hard if our delsquery of multiple OR statements gets too long.
-        if len(adds) >= 20 or len(delsquery) >= 350:
+        if len(adds) >= 50 or len(delsquery) >= 350:
             print('\nApplying batch dels and adds to AGO..')
             if delsquery:
                 # This is messy but slice it to remove trailing ' OR' otherwise the query is invalid

@@ -44,11 +44,11 @@ def process_row(row, field_map):
     finally:
         out_row['shape'] = shape
 
-    # Truncate description
+    # Truncate description and description_full
     try:
+        out_row['description_full'] = out_row['description'][:2000]
+        #out_row['description_full'] = None
         out_row['description'] = out_row['description'][:250]
-        #out_row['description_full'] = out_row['description']
-        out_row['description_full'] = None
     except:
         pass
 
