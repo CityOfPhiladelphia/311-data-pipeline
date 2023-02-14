@@ -337,6 +337,11 @@ def sync(day):
             try:
                 LAYER_OBJECT.delete_features(where=wherequery)
                 break
+            except ConnectionResetError as e:
+                print(f'Connection reset, retrying. Error: {str(e)}')
+                count += 1
+                sleep(20)
+                continue
             except RuntimeError as e:
                 if 'request has timed out' in str(e):
                     print(f'Request timed out, retrying. Error: {str(e)}')
@@ -380,6 +385,11 @@ def sync(day):
                 elif wherequery:
                     output = LAYER_OBJECT.query(where=wherequery)
                 return output
+            except ConnectionResetError as e:
+                print(f'Connection reset, retrying. Error: {str(e)}')
+                count += 1
+                sleep(20)
+                continue
             except RuntimeError as e:
                 if 'request has timed out' in str(e):
                     print(f'Request timed out, retrying. Error: {str(e)}')
@@ -397,7 +407,7 @@ def sync(day):
                     count += 1
                     sleep(5)
                     continue
-                # Gateway error recieved, sleep for a bit longer.
+                # Gateerror recieved, sleep for a bit longer.
                 if '502' in str(e):
                     print(f'502 Gateway error received, retrying. Error: {str(e)}')
                     count += 1
