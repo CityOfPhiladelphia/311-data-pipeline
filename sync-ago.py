@@ -391,7 +391,7 @@ def is_dst(when):
 # First let's do a pre-check and assert column headers are what we expect.
 expected_headers = ['CLOSED_DATETIME','OBJECTID','SERVICE_REQUEST_ID','STATUS','STATUS_NOTES','SERVICE_NAME',
                     'SERVICE_CODE','DESCRIPTION','AGENCY_RESPONSIBLE','SERVICE_NOTICE','REQUESTED_DATETIME',
-                    'UPDATED_DATETIME','EXPECTED_DATETIME','ADDRESS','ZIPCODE','MEDIA_URL','PRIVATE_CASE',
+                    'UPDATED_DATETIME','EXPECTED_DATETIME','CLOSED_DATETIME','ADDRESS','ZIPCODE','MEDIA_URL','PRIVATE_CASE',
                     'DESCRIPTION_FULL','SUBJECT','TYPE_','SHAPE',]
 
 headers_stmt = f'''
@@ -540,11 +540,14 @@ for row in databridge_matches:
         print('\nApplying batch dels and adds to AGO..')
         if delsquery:
             # This is messy but slice it to remove trailing ' OR' otherwise the query is invalid
-            print(f'delsqery: {delsquery[:-3]}')
+            #print(f'delsquery: {delsquery[:-3]}')
             delete_features(delsquery[:-3])
+            print(f'Deleted {delsquery.count("=")}.')
+
         if adds:
-            print(f'adds: {adds}')
+            #print(f'adds: {adds}')
             edit_features(adds, method='adds')
+            print(f'Added {len(adds)} rows.')
         adds = []
         delsquery = ''
 
@@ -552,10 +555,12 @@ for row in databridge_matches:
 if delsquery:
     print('\nApplying leftover batch dels and adds to AGO!')
     # This is messy but slice it to remove trailing ' OR' otherwise the query is invalid
-    print(f'delsqery: {delsquery[:-3]}')
+    #print(f'delsqery: {delsquery[:-3]}')
     delete_features(delsquery[:-3])
+    print(f'Deleted {delsquery.count("=")}.')
 if adds:
-    print('\nApplying leftover batch dels and adds to AGO!')
-    print(f'adds: {adds}')
+    #print('\nApplying leftover batch dels and adds to AGO!')
+    #print(f'adds: {adds}')
     edit_features(adds, method='adds')
+    prints(f'Added {len(adds)} rows.')
 

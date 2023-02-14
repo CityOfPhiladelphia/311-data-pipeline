@@ -9,6 +9,9 @@ MAPS_PASSWORD = 'password'
 SALESFORCE_AGO_ITEMID = '1234abcdf'
 DATABRIDGE_SDE_PASSWORD = 'password'
 DATABRIDGE_HOST = 'database.host'
+DATABRIDGE_DB = 'database'
+
+THREEONEONE_PASSWORD = 'password'
 
 # These describe the destination (enterprise) dataset.
 DEST_DB_DSN             = ''

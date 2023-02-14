@@ -10,7 +10,8 @@ click==8.0.3
 petl==1.7.4
 #-e git+https://github.com/CityOfPhiladelphia/geopetl.git#egg=geopetl
 # Victor's branch which has a fix for a bug which prevents "None" dates from salesforce not being converted for Oracle.
--e git+https://github.com/CityOfPhiladelphia/geopetl.git@shapes_and_worklfows_2#egg=geopetl
+#-e git+https://github.com/CityOfPhiladelphia/geopetl.git@shapes_and_worklfows_2#egg=geopetl
+-e git+https://github.com/CityOfPhiladelphia/geopetl.git@dev-pass#egg=geopetl
 pytz==2021.3
 simple-salesforce==1.11.4
 pymsteams==0.2.0

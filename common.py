@@ -47,7 +47,8 @@ def process_row(row, field_map):
     # Truncate description
     try:
         out_row['description'] = out_row['description'][:250]
-    # out_row['description_full'] = out_row['description']
+        #out_row['description_full'] = out_row['description']
+        out_row['description_full'] = None
     except:
         pass
 
@@ -70,7 +71,6 @@ def process_row(row, field_map):
             out_row[field] = None
         except TypeError:
             out_row[field] = None
-
 
     # Pick source field for status notes
     if out_row['agency_responsible'] in LI_STREETS_WATER:
