@@ -7,4 +7,3 @@ python sync.py --year_refresh=2020
 python sync.py --year_refresh=2021
 python sync.py --year_refresh=2022
 python sync.py --year_refresh=2023
-

@@ -37,6 +37,9 @@ else:
 #print("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
 dest_conn = cx_Oracle.connect(DEST_DB_CONN_STRING)
 dest_conn.autocommit = True
+# 20 minute timeout for really big queries
+dest_conn.call_timeout = 1200000
+
 if TEST:
     print(f'Connected to Oracle, using test DB and table "{DEST_TABLE}".\n')
 else:
@@ -46,9 +49,10 @@ cur = dest_conn.cursor()
 
 
 @click.command()
-@click.option('--day_refresh', '-d', help='Retrieve records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
-@click.option('--year_refresh', help='Retrieve records that were updated in a specific year and reload.')
-def sync(day_refresh, year_refresh):
+@click.option('--day_refresh', '-d', help='Retrieve records that were updated on a specific day, then upsert them. Ex: 2016-05-18)')
+@click.option('--month_refresh', '-m', help='Retrieve records that were updated in a specific month, then upsert them. Ex: 2017-01')
+@click.option('--year_refresh', '-y', help='Retrieve records that were updated in a specific year, then upsert them. Ex: 2017')
+def sync(day_refresh, year_refresh, month_refresh):
         # Connect to Salesforce
         sf = Salesforce(username=SF_USER, \
                         password=SF_PASSWORD, \
@@ -58,7 +62,7 @@ def sync(day_refresh, year_refresh):
         sf_query = SF_QUERY
 
         # supposedly SalesForce() takes a timeout parameter, but I get an unexpected keyword when I try
-        # this hack apparently sets the timeout anyway by inserting our own request session
+        # this hack, apparently it sets the timeout anyway by inserting our own request session
         session = requests.Session()
         session.timeout = 540
         sf.session = session
@@ -70,7 +74,6 @@ def sync(day_refresh, year_refresh):
             dt_tz = dt.astimezone(tz)
             return dt_tz
 
-
         # If a year was passed in, refresh for an entire year a month at a time
         if year_refresh:
             if not (int(year_refresh) >= 2000) and (int(year_refresh) <= 2099):
@@ -79,19 +82,19 @@ def sync(day_refresh, year_refresh):
             # Loop through the months
             for i in range(1,13):
                 print(f'\nFetching all by last modification for month {year_refresh}-{i}')
-                start_date = f'{year_refresh}-{i}-01'
-                start_date_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                start_date = f'{year_refresh}-{i}-01 00:00:00 +0000'
+                start_date_dt = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S %z')
                 start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
 
                 # less than but not equal to the next month or year so we easily capture everything
                 # without nonsense about month days and leap years.
                 if i == 12:
-                    end_date = f'{int(year_refresh)+1}-01-01'
-                    end_date_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                    end_date = f'{int(year_refresh)+1}-01-01 00:00:00 +0000'
+                    end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
                     end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
                 else:
-                    end_date = f'{year_refresh}-{i+1}-01'
-                    end_date_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                    end_date = f'{year_refresh}-{i+1}-01 00:00:00 +0000'
+                    end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
                     end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
 
                 sf_query = SF_QUERY + ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
@@ -104,11 +107,46 @@ def sync(day_refresh, year_refresh):
                 print('Got rows.')
                 process_rows(sf_rows)
 
+        # If a month_refresh was passed in, refresh for an entire month
+        elif month_refresh:
+            adate = datetime.strptime(month_refresh, '%Y-%m')
+            if not (int(adate.year) >= 2000) and (int(adate.year) <= 2099):
+                raise Exception('Please provide a realistic year!')
+            if not (int(adate.month) >= 1) and (int(adate.year) <= 12):
+                raise Exception('Please provide a realistic month!')
+
+            print(f'\nFetching all by last modification for month {month_refresh}')
+            start_date = f'{month_refresh}-01 00:00:00 +0000'
+            start_date_dt = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S %z')
+            start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
+
+            # less than but not equal to the next month or year so we easily capture everything
+            # without nonsense about month days and leap years.
+            if adate.month == 12:
+                end_date = f'{int(adate.year)+1}-01-01 00:00:00 +0000'
+                end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
+                end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
+            else:
+                end_date = f'{adate.year}-{int(adate.month)+1}-01 00:00:00 +0000'
+                end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
+                end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
+
+            sf_query = SF_QUERY + ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
+            sf_query += ' AND (LastModifiedDate < {})'.format(end_date_utc.isoformat())
+            #remove all newlines and extra whitespace in case its messing with HTML encoding
+            sf_query = ' '.join(sf_query.split())
+            print(sf_query)
+            sf_rows = sf.query_all_iter(sf_query)
+
+            print('Got rows.')
+            process_rows(sf_rows)
+
         # If a day was passed in, refresh for the entire day.
         elif day_refresh:
             print('Fetching records for {} only'.format(day_refresh))
             try:
-                start_date_dt = datetime.strptime(day_refresh, '%Y-%m-%d')
+                end_date = f'{day_refresh} 00:00:00 +0000'
+                start_date_dt = datetime.strptime(day_refresh, '%Y-%m-%d %H:%H:%S %z')
                 start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
             except ValueError as e:
                 messageTeams.send()
@@ -141,19 +179,17 @@ def sync(day_refresh, year_refresh):
             print(f'Converted start_date: {start_date_utc}')
             sf_query += ' AND (LastModifiedDate > {})'.format(start_date_utc.isoformat())
 
-        try:
-            print('Fetching new records from Salesforce...')
-            print("Salesforce Query: ", sf_query)
+            try:
+                print('Fetching new records from Salesforce...')
+                #print("Salesforce Query: ", sf_query)
 
-            sf_rows = sf.query_all_iter(sf_query)
-            #sf_debug_rows = sf.query_all_iter(sf_debug_query)
-            print('Got rows.')
-            process_rows(sf_rows)
-        except Exception as e:
-            message = "311-data-pipeline script: Couldn't query Salesforce. Error: {}".format(str(e))
-            messageTeams.text(message)
-            messageTeams.send()
-            raise Exception(message)
+                sf_rows = sf.query_all_iter(sf_query)
+                #sf_debug_rows = sf.query_all_iter(sf_debug_query)
+                print('Got rows.')
+                process_rows(sf_rows)
+            except Exception as e:
+                message = "311-data-pipeline script: Couldn't query Salesforce. Error: {}".format(str(e))
+                raise Exception(message)
 
 def process_rows(sf_rows):
     print('Processing rows...')
@@ -286,7 +322,7 @@ def process_rows(sf_rows):
     if add_count:
         print(f'Added {add_count} rows.')
     if update_count:
-        print(f'Added {update_count} rows.')
+        print(f'Updated {update_count} rows.')
     if add_count == 0:
         warnings.warn('No records added')
     if update_count == 0:
