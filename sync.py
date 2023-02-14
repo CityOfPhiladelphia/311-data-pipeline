@@ -25,15 +25,24 @@ from config import *
 # Setup Microsoft Teams connector to our webhook for channel "Citygeo Notifications"
 messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
 
-
 # Setup global database vars/objects to be used between our two functions below.
 
-DEST_DB_CONN_STRING = f'gis_311/{THREEONEONE_PASSWORD}@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST={DATABRIDGE_HOST})(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME={DATABRIDGE_DB})))'
+# if this is set to true in the config
+if TEST:
+    DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_TEST_DSN}'
+else:
+    DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{PROD_TEST_DSN}'
+
 # Connect to database
 #print("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
 dest_conn = cx_Oracle.connect(DEST_DB_CONN_STRING)
-print(f'Connected to Oracle, using database "{DATABRIDGE_DB}" and account "{DEST_DB_ACCOUNT}".\n')
+dest_conn.autocommit = True
+if TEST:
+    print(f'Connected to Oracle, using test DB and table "{DEST_TABLE}".\n')
+else:
+    print(f'Connected to Oracle, using prod DB and table "{DEST_TABLE}".\n')
 cur = dest_conn.cursor()
+
 
 
 @click.command()
@@ -74,11 +83,16 @@ def sync(day_refresh, year_refresh):
                 start_date_dt = datetime.strptime(start_date, '%Y-%m-%d')
                 start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
 
-                # less than but not equal to the next month so we easily capture everything
+                # less than but not equal to the next month or year so we easily capture everything
                 # without nonsense about month days and leap years.
-                end_date = f'{year_refresh}-{i+1}-01'
-                end_date_dt = datetime.strptime(end_date, '%Y-%m-%d')
-                end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
+                if i == 12:
+                    end_date = f'{int(year_refresh)+1}-01-01'
+                    end_date_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                    end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
+                else:
+                    end_date = f'{year_refresh}-{i+1}-01'
+                    end_date_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                    end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
 
                 sf_query = SF_QUERY + ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
                 sf_query += ' AND (LastModifiedDate < {})'.format(end_date_utc.isoformat())
@@ -146,10 +160,10 @@ def process_rows(sf_rows):
     rows = []
 
     for i, sf_row in enumerate(sf_rows):
-        if i % 20000 == 0 and i != 0:
-            print(f'DEBUG: processed {i} rows...')
+        #if i % 20000 == 0 and i != 0:
+            #print(f'DEBUG: processed {i} rows...')
             #print(sf_row)
-            print(f"DEBUG: on CaseNumber: {sf_row['CaseNumber']}")
+            #print(f"DEBUG: on CaseNumber: {sf_row['CaseNumber']}")
         # process_row() is from common.py
         rows.append(process_row(sf_row, FIELD_MAP))
 
@@ -157,11 +171,11 @@ def process_rows(sf_rows):
         print('Nothing received from Salesforce, nothing to update!')
         return
 
-    print(f'Uploading {len(rows)} rows.')
+    print(f'Updating/adding {len(rows)} rows.')
 
     #Write to a temp csv to avoid memory issues:
     temp_csv = 'temp_sf_processed_rows.csv'
-    print(f'Writing to temp csv "{temp_csv}"...')
+    #print(f'Writing to temp csv "{temp_csv}"...')
     rows = etl.fromdicts(rows)
 
     print('Removing bad characters..')
@@ -173,15 +187,15 @@ def process_rows(sf_rows):
     rows.convert('status_notes', lambda u, row: u.replace(row.status_notes, row.status_notes.encode("ascii", "ignore".decode())))
     rows.tocsv(temp_csv)
 
-    print('Reading from temp csv')
+    #print('Reading from temp csv')
     rows = etl.fromcsv(temp_csv)
     etl.look(rows)
 
-    TEMP_TABLE = DEST_DB_ACCOUNT.upper() + '.' + DEST_TEMP_TABLE 
     # Truncate temp table
-    print(f'Truncating temp table "{DEST_TEMP_TABLE}"...')
-    cur.execute(f'truncate table {DEST_TEMP_TABLE}')
-    dest_conn.commit()
+    print(f'Truncating temp table "{TEMP_TABLE}"...')
+    cur.execute(f'truncate table {DEST_DB_ACCOUNT}.{TEMP_TABLE}')
+    #autocommit on above
+    #dest_conn.commit()
 
     #######################################
     # NOTE 6/13/2022
@@ -191,7 +205,7 @@ def process_rows(sf_rows):
     date_fields = ['REQUESTED_DATETIME', 'EXPECTED_DATETIME', 'UPDATED_DATETIME', 'CLOSED_DATETIME']
 
     prepare_stmt = f'''
-     INSERT INTO {TEMP_TABLE} (service_request_id, status, service_name, service_code, description, agency_responsible, service_notice, requested_datetime, updated_datetime, expected_datetime, closed_datetime, address, zipcode, media_url, private_case, subject, type_, shape, status_notes, description_full, objectid) VALUES (:SERVICE_REQUEST_ID, :STATUS, :SERVICE_NAME, :SERVICE_CODE, :DESCRIPTION, :AGENCY_RESPONSIBLE, :SERVICE_NOTICE, TO_TIMESTAMP_TZ(:REQUESTED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), TO_TIMESTAMP_TZ(:UPDATED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), TO_TIMESTAMP_TZ(:EXPECTED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), TO_TIMESTAMP_TZ(:CLOSED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), :ADDRESS, :ZIPCODE, :MEDIA_URL, :PRIVATE_CASE, :SUBJECT, :TYPE_, SDE.ST_GEOMETRY(:SHAPE, 4326), :STATUS_NOTES, :DESCRIPTION_FULL, SDE.GDB_UTIL.NEXT_ROWID('{TEMP_TABLE.split('.')[0]}', '{TEMP_TABLE.split('.')[1]}'))
+     INSERT INTO {TEMP_TABLE} (service_request_id, status, service_name, service_code, description, agency_responsible, service_notice, requested_datetime, updated_datetime, expected_datetime, closed_datetime, address, zipcode, media_url, private_case, subject, type_, shape, status_notes, description_full, objectid) VALUES (:SERVICE_REQUEST_ID, :STATUS, :SERVICE_NAME, :SERVICE_CODE, :DESCRIPTION, :AGENCY_RESPONSIBLE, :SERVICE_NOTICE, TO_TIMESTAMP_TZ(:REQUESTED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), TO_TIMESTAMP_TZ(:UPDATED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), TO_TIMESTAMP_TZ(:EXPECTED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), TO_TIMESTAMP_TZ(:CLOSED_DATETIME, 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'), :ADDRESS, :ZIPCODE, :MEDIA_URL, :PRIVATE_CASE, :SUBJECT, :TYPE_, SDE.ST_GEOMETRY(:SHAPE, 4326), :STATUS_NOTES, :DESCRIPTION_FULL, SDE.GDB_UTIL.NEXT_ROWID('{DEST_DB_ACCOUNT}', '{TEMP_TABLE}'))
      '''
     cur.prepare(prepare_stmt)
 
@@ -216,25 +230,29 @@ def process_rows(sf_rows):
             if i> 0 and i % buffer_size == 0:
                 #print(f"Reached buffer, on iteration {i}, inserting...")
                 cur.executemany(None, val_rows, batcherrors=False)
-                dest_conn.commit()
+                #autocommit on above
+                #dest_conn.commit()
                 val_rows = []
 
         if val_rows:
             print("Inserting remaining rows...")
             cur.executemany(None, val_rows, batcherrors=False)
-            dest_conn.commit() 
+            #autocommit on above
+            #dest_conn.commit() 
 
 
     ##########################
 
 
-    print(f'Executing UPDATE_COUNT_STMT: {UPDATE_COUNT_STMT}')
+    
+    #print(f'Executing UPDATE_COUNT_STMT: {UPDATE_COUNT_STMT}')
     cur.execute(UPDATE_COUNT_STMT)
     update_count = cur.fetchone()[0]
     print(f'Deleting updated records by matching up whats in the temp table..')
-    print(f'DEL_STMT: {DEL_STMT}')
+    #print(f'DEL_STMT: {DEL_STMT}')
     cur.execute(DEL_STMT)
-    dest_conn.commit()
+    #autocommit on above
+    #dest_conn.commit()
 
     # Calculate number of new records added
     add_count = len(rows) - update_count
@@ -242,12 +260,12 @@ def process_rows(sf_rows):
     #print(f'Appending new records to prod table {DEST_TABLE} with {dest_conn} via geopetl...')
     #rows.appendoraclesde(dest_conn, DEST_TABLE)
 
-    print(f'Appending new records to prod table {DEST_TABLE}.')
+    print(f'Appending new records to table {DEST_TABLE}.')
     headers_str = '''
     SERVICE_REQUEST_ID, STATUS, STATUS_NOTES, SERVICE_NAME, SERVICE_CODE, DESCRIPTION, AGENCY_RESPONSIBLE, SERVICE_NOTICE, ADDRESS, ZIPCODE, MEDIA_URL, PRIVATE_CASE, DESCRIPTION_FULL, SUBJECT, TYPE_, UPDATED_DATETIME, EXPECTED_DATETIME, CLOSED_DATETIME, REQUESTED_DATETIME, SHAPE, OBJECTID
     '''
     select_str = f'''
-    SERVICE_REQUEST_ID, STATUS, STATUS_NOTES, SERVICE_NAME, SERVICE_CODE, DESCRIPTION, AGENCY_RESPONSIBLE, SERVICE_NOTICE, ADDRESS, ZIPCODE, MEDIA_URL, PRIVATE_CASE, DESCRIPTION_FULL, SUBJECT, TYPE_, UPDATED_DATETIME, EXPECTED_DATETIME, CLOSED_DATETIME, REQUESTED_DATETIME, SHAPE, SDE.GDB_UTIL.NEXT_ROWID('{DEST_DB_ACCOUNT.upper()}','{DEST_TABLE.upper()}')
+    SERVICE_REQUEST_ID, STATUS, STATUS_NOTES, SERVICE_NAME, SERVICE_CODE, DESCRIPTION, AGENCY_RESPONSIBLE, SERVICE_NOTICE, ADDRESS, ZIPCODE, MEDIA_URL, PRIVATE_CASE, DESCRIPTION_FULL, SUBJECT, TYPE_, UPDATED_DATETIME, EXPECTED_DATETIME, CLOSED_DATETIME, REQUESTED_DATETIME, SHAPE, SDE.GDB_UTIL.NEXT_ROWID('{DEST_DB_ACCOUNT}','{DEST_TABLE}')
     '''
 
     #INSERT_STMT = f'''
@@ -256,12 +274,13 @@ def process_rows(sf_rows):
     #    (SELECT SERVICE_REQUEST_ID FROM {DEST_DB_ACCOUNT.upper()}.{DEST_TABLE.upper()})
     #'''
     INSERT_STMT = f'''
-    INSERT INTO {DEST_DB_ACCOUNT.upper()}.{DEST_TABLE.upper()} ({headers_str}) 
-        SELECT {select_str} FROM {DEST_DB_ACCOUNT.upper()}.{DEST_TABLE.upper()}_TEMP
+    INSERT INTO {DEST_DB_ACCOUNT}.{DEST_TABLE} ({headers_str}) 
+        SELECT {select_str} FROM {DEST_DB_ACCOUNT}.{TEMP_TABLE}
     '''
-    print(f'Running statement: {INSERT_STMT}')
+    #print(f'Running statement: {INSERT_STMT}')
     cur.execute(INSERT_STMT)
-    dest_conn.commit()
+    #autocommit on above
+    #dest_conn.commit()
 
     # We should have added and updated at least 1 record
     if add_count == 0:

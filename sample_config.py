@@ -14,15 +14,13 @@ DATABRIDGE_DB = 'database'
 THREEONEONE_PASSWORD = 'password'
 
 # These describe the destination (enterprise) dataset.
-DEST_DB_DSN             = ''
+# These describe the destination (enterprise) dataset.
 DEST_PROD_DSN = ''
 DEST_TEST_DSN = ''
-DEST_DB_DSN = DEST_PROD_DSN if not TEST else DEST_TEST_DSN
-DEST_DB_CONN_STRING = 'gis_311/pass@' + DEST_DB_DSN
 DEST_DB_ACCOUNT         = ''
-DEST_TABLE              = ''
-DEST_UPDATED_FIELD      = ''
-DEST_TEMP_TABLE         = ''
+DEST_TABLE              = 'SALESFORCE_CASES'
+DEST_UPDATED_FIELD      = 'updated_datetime'
+TEMP_TABLE         = 'SALESFORCE_CASES_TEMP'
 
 
 # For deleting records which have since been updated.
@@ -31,13 +29,13 @@ UPDATE_COUNT_STMT = '''
     from {}
     where service_request_id in
         (select service_request_id from {})
-'''.format(DEST_TABLE, DEST_TEMP_TABLE)
+'''.format(DEST_TABLE, TEMP_TABLE)
 
 DEL_STMT = '''
     delete from {}
     where service_request_id in
         (select service_request_id from {})
-'''.format(DEST_TABLE, DEST_TEMP_TABLE)
+'''.format(DEST_TABLE, TEMP_TABLE)
 
 FIELD_MAP = {
     # DESTINATION FIELD         # SOURCE FIELD
