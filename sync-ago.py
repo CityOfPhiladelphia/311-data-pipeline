@@ -354,6 +354,11 @@ def sync(day):
                     count += 1
                     sleep(15)
                     continue
+                if '503' in str(e):
+                    print(f'503 Service Unavailable received, retrying. Error: {str(e)}')
+                    count += 1
+                    sleep(15)
+                    continue
                 else:
                     raise e
 
@@ -385,6 +390,11 @@ def sync(day):
                 # Gateway error recieved, sleep for a bit longer.
                 if '502' in str(e):
                     print(f'502 Gateway error received, retrying. Error: {str(e)}')
+                    count += 1
+                    sleep(15)
+                    continue
+                if '503' in str(e):
+                    print(f'503 Service Unavailable received, retrying. Error: {str(e)}')
                     count += 1
                     sleep(15)
                     continue
