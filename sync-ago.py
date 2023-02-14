@@ -343,21 +343,26 @@ def sync(day):
                     count += 1
                     sleep(5)
                     continue
+                if 'reset by peer' in str(e):
+                    print(f'Connection reset by peer, retrying. Error: {str(e)}')
+                    count += 1
+                    sleep(5)
+                    continue
                 if 'Unable to perform query' in str(e):
                     print(f'Dumb error received, retrying. Error: {str(e)}')
                     count += 1
-                    sleep(5)
+                    sleep(10)
                     continue
                 # Gateway error recieved, sleep for a bit longer.
                 if '502' in str(e):
                     print(f'502 Gateway error received, retrying. Error: {str(e)}')
                     count += 1
-                    sleep(15)
+                    sleep(20)
                     continue
                 if '503' in str(e):
                     print(f'503 Service Unavailable received, retrying. Error: {str(e)}')
                     count += 1
-                    sleep(15)
+                    sleep(20)
                     continue
                 else:
                     raise e
@@ -378,6 +383,11 @@ def sync(day):
             except RuntimeError as e:
                 if 'request has timed out' in str(e):
                     print(f'Request timed out, retrying. Error: {str(e)}')
+                    count += 1
+                    sleep(5)
+                    continue
+                if 'reset by peer' in str(e):
+                    print(f'Connection reset by peer, retrying. Error: {str(e)}')
                     count += 1
                     sleep(5)
                     continue
