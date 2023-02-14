@@ -18,10 +18,12 @@ DEST_DB_DSN             = ''
 DEST_PROD_DSN = ''
 DEST_TEST_DSN = ''
 DEST_DB_DSN = DEST_PROD_DSN if not TEST else DEST_TEST_DSN
-DEST_DB_CONN_STRING = 'gis_311/call@' + DEST_DB_DSN
+DEST_DB_CONN_STRING = 'gis_311/pass@' + DEST_DB_DSN
+DEST_DB_ACCOUNT         = ''
 DEST_TABLE              = ''
 DEST_UPDATED_FIELD      = ''
 DEST_TEMP_TABLE         = ''
+
 
 # For deleting records which have since been updated.
 UPDATE_COUNT_STMT = '''
@@ -50,7 +52,7 @@ FIELD_MAP = {
     'updated_datetime':         'LastModifiedDate',
     'expected_datetime':        'Sla_date__c',
     'address':                  'Street__c',
-    'zipcode':                  'Zip_code__c',
+    'zipcode':                  'ZipCode__c',
     'media_url':                'Media_Url__c',
     'private_case':             'Private_Case__c',
     'subject':                  'Subject',
@@ -87,7 +89,7 @@ SF_QUERY            = '''
                             SLA__c,
                             Service_Code__c,
                             Resolution__c,
-                            Zip_code__c,
+                            ZipCode__c,
                             Media_Url__c,
                             Sla_date__c,
                             Close_Reason__c,

@@ -28,19 +28,18 @@ messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
 
 # Setup global database vars/objects to be used between our two functions below.
 
-print('PASS:    ', THREEONEONE_PASSWORD)
-print('DB:    ', DATABRIDGE_DB)
 DEST_DB_CONN_STRING = f'gis_311/{THREEONEONE_PASSWORD}@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST={DATABRIDGE_HOST})(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME={DATABRIDGE_DB})))'
 # Connect to database
-print("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
+#print("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
 dest_conn = cx_Oracle.connect(DEST_DB_CONN_STRING)
+print(f'Connected to Oracle, using database "{DATABRIDGE_DB}" and account "{DEST_DB_ACCOUNT}".\n')
 cur = dest_conn.cursor()
 
 
 @click.command()
-@click.option('--day', '-d', help='Retrieve records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
-@click.option('--full_refresh', is_flag=True, help='Full refresh by chunking through service_request_ids')
-def sync(day, full_refresh):
+@click.option('--day_refresh', '-d', help='Retrieve records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
+@click.option('--year_refresh', help='Retrieve records that were updated in a specific year and reload.')
+def sync(day_refresh, year_refresh):
         # Connect to Salesforce
         sf = Salesforce(username=SF_USER, \
                         password=SF_PASSWORD, \
@@ -63,78 +62,44 @@ def sync(day, full_refresh):
             return dt_tz
 
 
-        if full_refresh:
-            # Completely sync up our dataset with Salesforce's data
-            # Get max CaseNumber (service_request_id) so we can chunk up to that.
-            max_casenumber_query = "SELECT max(CaseNumber) FROM Case"
-            #max_casenumber_query = "SELECT max(CaseNumber) FROM Case WHERE ZipCode__c != 'NULL' AND " + SF_WHERE
-            print(f'Getting max CaseNumber with: {max_casenumber_query}')
-            max_casenumber = sf.query_all(max_casenumber_query)
-            max_casenumber = int(max_casenumber['records'][0]['expr0'])
-            print(max_casenumber)
+        # If a year was passed in, refresh for an entire year a month at a time
+        if year_refresh:
+            if not (int(year_refresh) >= 2000) and (int(year_refresh) <= 2099):
+                raise Exception('Please provide a realistic year!')
 
-            # Getting the last row just for debug purposes
-            #last_row_query = sf_query + f"AND CaseNumber = '{max_casenumber}'"
-            #print(f'Getting latest row with: {last_row_query}')
-            #last_row = sf.query_all(last_row_query)
-            #print(last_row)
+            # Loop through the months
+            for i in range(1,13):
+                print(f'\nFetching all by last modification for month {year_refresh}-{i}')
+                start_date = f'{year_refresh}-{i}-01'
+                start_date_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
 
+                # less than but not equal to the next month so we easily capture everything
+                # without nonsense about month days and leap years.
+                end_date = f'{year_refresh}-{i+1}-01'
+                end_date_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
 
-            # Chunk by 100,000 rows
-            times_to_loop = int(max_casenumber / 100000)
-            remainder = int(max_casenumber % 100000)
-            print(f'times_to_loop: {times_to_loop}')
-            print(f'remainder: {remainder}')
-
-            for i in range(1,times_to_loop+1):
-                top = i * 100000 
-                bottom = top - 100000
-                # Because salesforce CaseNumbers are strings and some start with zeros, we need to cast
-                # them to make this work. Otherwise we get a billion rows regardless.
-                sf_query = SF_QUERY + f" AND CaseNumber > '{bottom}'"
-                sf_query +=  f" AND CaseNumber <= '{top}'"
+                sf_query = SF_QUERY + ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
+                sf_query += ' AND (LastModifiedDate < {})'.format(end_date_utc.isoformat())
                 #remove all newlines and extra whitespace in case its messing with HTML encoding
                 sf_query = ' '.join(sf_query.split())
-                print(f'\nFetching records with CaseNumber (service_request_id) > {bottom} and <= {top}')
                 print(sf_query)
-
                 sf_rows = sf.query_all_iter(sf_query)
 
                 print('Got rows.')
                 process_rows(sf_rows)
 
-
-            # Fetch remainder if not 0 (somehow we're divisible by 100,000)
-            if remainder:
-                top = (times_to_loop * 100000) + remainder
-                bottom = (times_to_loop * 100000)
-
-                # Because salesforce CaseNumbers are strings and some start with zeros, we need to cast
-                # them to make this work. Otherwise we get a billion rows regardless.
-                sf_query = SF_QUERY + f" AND CaseNumber > '{bottom}'"
-                sf_query +=  f" AND CaseNumber <= '{top}'"
-                #remove all newlines and extra whitespace in case its messing with HTML encoding
-                sf_query = ' '.join(sf_query.split())
-                print(f'Fetching remainder with CaseNumber (service_request_id) > {bottom} and <= {top}')
-                print(sf_query)
-
-                sf_rows = sf.query_all_iter(sf_query)
-
-                print('Got rows.')
-                process_rows(sf_rows)
-
-
-        # If a start date was passed in, handle it.
-        elif day:
-            print('Fetching records for {} only'.format(day))
+        # If a day was passed in, refresh for the entire day.
+        elif day_refresh:
+            print('Fetching records for {} only'.format(day_refresh))
             try:
-                start_date_dt = datetime.strptime(day, '%Y-%m-%d')
+                start_date_dt = datetime.strptime(day_refresh, '%Y-%m-%d')
                 start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
             except ValueError as e:
-                message = '311-data-pipeline script: Value Error! {}'.format(str(e))
-                messageTeams.text(message)
                 messageTeams.send()
-                raise AssertionError('Date parameter is invalid')
+                print('Date parameter is invalid')
+                raise e
             end_date = start_date_utc + timedelta(days=1)
 
             sf_query += ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
@@ -146,7 +111,7 @@ def sync(day, full_refresh):
             process_rows(sf_rows)
 
 
-        # Otherwise, grab the last updated date from the DB.
+        # Otherwise, grab rows by the last updated date from the DB.
         else:
             print('Getting last updated date...')
             max_db_query = f"select to_char(max(UPDATED_DATETIME),  'YYYY-MM-DD HH24:MI:SS.FF TZH:TZM') from {DEST_DB_ACCOUNT.upper()}.{DEST_TABLE.upper()}"
@@ -177,17 +142,14 @@ def sync(day, full_refresh):
             raise Exception(message)
 
 def process_rows(sf_rows):
-
-
-
     print('Processing rows...')
     rows = []
 
     for i, sf_row in enumerate(sf_rows):
         if i % 20000 == 0 and i != 0:
-            print(f'processed {i} rows...')
+            print(f'DEBUG: processed {i} rows...')
             #print(sf_row)
-            print(f"on CaseNumber: {sf_row['CaseNumber']}")
+            print(f"DEBUG: on CaseNumber: {sf_row['CaseNumber']}")
         # process_row() is from common.py
         rows.append(process_row(sf_row, FIELD_MAP))
 
@@ -325,6 +287,6 @@ def process_rows(sf_rows):
     #messageTeams.send()
 
 
-
 if __name__ == '__main__':
     sync()
+    print('Done.')
