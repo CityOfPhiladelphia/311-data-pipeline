@@ -234,10 +234,15 @@ def sync(day):
             if row[col] == None:
                 if 'datetime' not in col:
                     row[col] = ''
-
         for col in row.keys():
             if 'datetime' in col and row[col] == '':
                 row[col] = None
+        # Check to make sure rows aren't incorrectly set as UTC. Convert to EST/EDT if so.
+            if row[col]:
+                if 'datetime' in col and '+0000' in row[col]:
+                    dt_obj = datetime.strptime(row[col], "%Y-%m-%d %H:%M:%S %z")
+                    local_dt_obj = obj.astimezone(pytz.timezone('US/Eastern'))
+                    row[col] = local_db_obj.strftime("%Y-%m-%d %H:%M:%S %z")
 
         # remove the shape field so we can replace it with SHAPE with the spatial reference key
         # and also store in 'wkt' var (well known text) so we can project it
@@ -459,10 +464,14 @@ def sync(day):
     if day:
         max_ago_dt = datetime.datetime.strptime(day, '%Y-%m-%d')
         max_ago_dt_str = max_ago_dt.strftime("%Y-%m-%d %H:%M:%S")
-        print(f'Start date passed, grabbing records starting at {max_ago_dt_str}')
+        print(f'\nStart date passed, grabbing records starting at {max_ago_dt_str}')
+        end_dt = max_ago_dt + datetime.timedelta(days=1)
+        end_dt_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+
     else:
         outstats = [{"statisticType":"max", "onStatisticField": "UPDATED_DATETIME"}]
         #latest_time = LAYER_OBJECT.query(outStatistics=outstat, outFields='*')
+        print('\nGrabbing max updated_datetime from AGO...')
         latest_time = query_features(outstats=outstats)
 
         # It gets returned as a unix timestamp, so convert it back.
@@ -476,15 +485,16 @@ def sync(day):
         # so we get a UTC timestamp, but when we attempt to convert to local time, it again subtracts 4 or 5 hours
         # Which then puts us 8 hours behind...
 
+        # We need this in local time to query Databridge effectively, so we'll manually adjust it.
         # So my solution is to simply add the hours myself and keep it timezone naive *shrug
-        #if is_dst(max_ago_dt):
-        #    max_ago_dt = max_ago_dt + datetime.timedelta(hours=4)
-        #else:
-        #    max_ago_dt = max_ago_dt + datetime.timedelta(hours=5)
+        if is_dst(max_ago_dt):
+            max_ago_dt = max_ago_dt + datetime.timedelta(hours=4)
+        else:
+            max_ago_dt = max_ago_dt + datetime.timedelta(hours=5)
 
         max_ago_dt_str = max_ago_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        print('Max AGO Timestamp: ' + str(max_ago_dt_str) + '\n')
+        print('Max AGO Timestamp after timezone correction: ' + str(max_ago_dt_str) + '\n')
 
     ############################################
     # 2. Compare against max date in databridge
@@ -493,12 +503,22 @@ def sync(day):
     # override to redo records from this date onwards 
     #max_ago_dt_str = '2022-06-07 12:00:00'
 
-    databridge_stmt=f'''
+    # If a day param was a passed, grab only records for that day.
+    if day:
+        databridge_stmt=f'''
+        SELECT {PRIMARY_KEY},UPDATED_DATETIME
+            FROM GIS_311.SALESFORCE_CASES
+            WHERE UPDATED_DATETIME >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            AND UPDATED_DATETIME < to_date('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            ORDER BY UPDATED_DATETIME ASC
+        '''
+    else:
+        databridge_stmt=f'''
         SELECT {PRIMARY_KEY},UPDATED_DATETIME
             FROM GIS_311.SALESFORCE_CASES
             WHERE UPDATED_DATETIME >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
             ORDER BY UPDATED_DATETIME ASC
-    '''
+        '''
 
     print(f'Grabbing all SERVICE_RECORD_IDs with same date or greater with query: {databridge_stmt}')
     cursor.execute(databridge_stmt)
@@ -583,7 +603,7 @@ def sync(day):
                 delete_features(delsquery[:-3])
                 print(f'Deleted {delsquery.count("=")} rows.')
             if adds:
-                print('On service_request_id: {}'.format(adds[0][-1:]['service_request_id']))
+                print('On service_request_id: {}'.format(adds[-1:][0]['attributes']['service_request_id']))
                 #print(f'adds: {adds}')
                 edit_features(adds, method='adds')
                 print(f'Added {len(adds)} rows.')
@@ -598,10 +618,11 @@ def sync(day):
         delete_features(delsquery[:-3])
         print(f'Deleted {delsquery.count("=")} rows.')
     if adds:
-        print('On service_request_id: {}'.format(adds[0][-1:]['service_request_id']))
+        print('On service_request_id: {}'.format(adds[-1:][0]['attributes']['service_request_id']))
         #print(f'adds: {adds}')
         edit_features(adds, method='adds')
         print(f'Added {len(adds)} rows.')
+    print('Done.')
 
 if __name__ == '__main__':
     sync()

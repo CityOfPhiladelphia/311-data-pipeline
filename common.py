@@ -58,7 +58,7 @@ def process_row(row, field_map):
     out_row['private_case'] = private
 
     # Datify date fields
-    for date_field_prefix in ['requested', 'updated', 'expected']:
+    for date_field_prefix in ['requested', 'updated', 'expected','closed']:
         field = date_field_prefix + '_datetime'
         val = out_row[field]
         try:

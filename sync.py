@@ -26,8 +26,8 @@ messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
 
 
 @click.command()
-@click.option('--date', '-d', help='Retrieve records that were updated on a specific date (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
-def sync(date):
+@click.option('--day', '-d', help='Retrieve records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
+def sync(day):
 
     TEMP_TABLE = 'GIS_311.SALESFORCE_CASES_TEMP'
     status = 'ERROR'
@@ -63,10 +63,10 @@ def sync(date):
             return dt_tz
 
         # If a start date was passed in, handle it.
-        if date:
-            print('Fetching records for {} only'.format(date))
+        if day:
+            print('Fetching records for {} only'.format(day))
             try:
-                start_date_dt = datetime.strptime(date, '%Y-%m-%d')
+                start_date_dt = datetime.strptime(day, '%Y-%m-%d')
                 start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
             except ValueError as e:
                 message = '311-data-pipeline script: Value Error! {}'.format(str(e))
