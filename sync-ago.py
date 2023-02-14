@@ -591,7 +591,7 @@ def sync(day):
         # A bit messy but it should (probably) save some strain on ESRI's infra and go faster
         # then one at a time.
         # AGO will also fail hard if our delsquery of multiple OR statements gets too long.
-        if len(adds) >= 50 or len(delsquery) >= 350:
+        if len(adds) >= 50 or delsquery.count(PRIMARY_KEY) >= 25:
             print('\nApplying batch dels and adds to AGO..')
             if delsquery:
                 # This is messy but slice it to remove trailing ' OR' otherwise the query is invalid
