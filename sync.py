@@ -17,13 +17,14 @@ from simple_salesforce import Salesforce
 import petl as etl
 import geopetl
 import requests
+from requests.adapters import HTTPAdapter, Retry
 from common import *
 from config import *
 
 #print(os.environ["ORA_TZFILE"])
 
 # Setup Microsoft Teams connector to our webhook for channel "Citygeo Notifications"
-messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
+#messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
 
 # Setup global database vars/objects to be used between our two functions below.
 
@@ -31,41 +32,52 @@ messageTeams = pymsteams.connectorcard(MSTEAMS_CONNECTOR)
 if TEST:
     DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_TEST_DSN}'
 else:
-    DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{PROD_TEST_DSN}'
+    DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_PROD_DSN}'
 
 # Connect to database
 #print("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
 dest_conn = cx_Oracle.connect(DEST_DB_CONN_STRING)
 dest_conn.autocommit = True
-# 20 minute timeout for really big queries
-dest_conn.call_timeout = 1200000
+# 1200000 ms is a 20 minute timeout for really big queries
+# Nvm, 0 for infinite
+dest_conn.call_timeout = 0
 
 if TEST:
-    print(f'Connected to Oracle, using test DB and table "{DEST_TABLE}".\n')
+    print(f'Connected to Oracle, using TEST DB and table "{DEST_TABLE}".\n')
 else:
-    print(f'Connected to Oracle, using prod DB and table "{DEST_TABLE}".\n')
+    print(f'Connected to Oracle, using PROD DB and table "{DEST_TABLE}".\n')
 cur = dest_conn.cursor()
 
 
+def write_log(msg):
+    with open('tracker.log', 'a') as the_file:
+        the_file.write(msg + '\n')
 
 @click.command()
-@click.option('--day_refresh', '-d', help='Retrieve records that were updated on a specific day, then upsert them. Ex: 2016-05-18)')
-@click.option('--month_refresh', '-m', help='Retrieve records that were updated in a specific month, then upsert them. Ex: 2017-01')
-@click.option('--year_refresh', '-y', help='Retrieve records that were updated in a specific year, then upsert them. Ex: 2017')
-def sync(day_refresh, year_refresh, month_refresh):
+@click.option('--day_refresh', '-d', default=None, help='Retrieve records that were updated on a specific day, then upsert them. Ex: 2016-05-18)')
+@click.option('--month_refresh', '-m', default=None, help='Retrieve records that were updated in a specific month, then upsert them. Ex: 2017-01')
+@click.option('--year_refresh', '-y', default=None, help='Retrieve records that were updated in a specific year, then upsert them. Ex: 2017')
+@click.option('--date_column', '-c', default='LastModifiedDate', help='Date column to select cases by from Salesforce. Default is "LastModifiedDate". You can consider using "CreatedDate" when doing full refreshes.')
+def sync(day_refresh, year_refresh, month_refresh, date_column):
         # Connect to Salesforce
         sf = Salesforce(username=SF_USER, \
                         password=SF_PASSWORD, \
                         security_token=SF_TOKEN)
+        # supposedly SalesForce() takes a timeout parameter, but it doesn't appear to work.
+        # Instead, we can apparently set the tmeout anyway by inserting our own request session
+        #session = requests.Session()
+        #session.timeout = 540
+        #sf.session = session
+
+        # Set a custom timeout in the requests session object directly
+        sf.session.timeout = 540
+        # Set a custom amount to retry
+        # https://github.com/simple-salesforce/simple-salesforce/issues/402#issuecomment-1109085548
+        sf.session.adapters['https://'].max_retries = Retry(total=10, connect=5, backoff_factor=3)
 
         # Used to formulate Salesforce query below
         sf_query = SF_QUERY
 
-        # supposedly SalesForce() takes a timeout parameter, but I get an unexpected keyword when I try
-        # this hack, apparently it sets the timeout anyway by inserting our own request session
-        session = requests.Session()
-        session.timeout = 540
-        sf.session = session
 
         local_tz = pytz.timezone('US/Eastern')
         utc_tz = pytz.timezone('UTC')
@@ -79,12 +91,16 @@ def sync(day_refresh, year_refresh, month_refresh):
             if not (int(year_refresh) >= 2000) and (int(year_refresh) <= 2099):
                 raise Exception('Please provide a realistic year!')
 
+            write_log(f'year_refresh on {year_refresh}')
+
             # Loop through the months
             for i in range(1,13):
                 print(f'\nFetching all by last modification for month {year_refresh}-{i}')
                 start_date = f'{year_refresh}-{i}-01 00:00:00 +0000'
                 start_date_dt = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S %z')
                 start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
+
+                write_log(f'Using start date: {start_date}')
 
                 # less than but not equal to the next month or year so we easily capture everything
                 # without nonsense about month days and leap years.
@@ -97,8 +113,8 @@ def sync(day_refresh, year_refresh, month_refresh):
                     end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
                     end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
 
-                sf_query = SF_QUERY + ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
-                sf_query += ' AND (LastModifiedDate < {})'.format(end_date_utc.isoformat())
+                sf_query = SF_QUERY + f' AND ({date_column} >= {start_date_utc.isoformat()})'
+                sf_query += f' AND ({date_column} < {end_date_utc.isoformat()})'
                 #remove all newlines and extra whitespace in case its messing with HTML encoding
                 sf_query = ' '.join(sf_query.split())
                 print(sf_query)
@@ -131,8 +147,8 @@ def sync(day_refresh, year_refresh, month_refresh):
                 end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
                 end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
 
-            sf_query = SF_QUERY + ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
-            sf_query += ' AND (LastModifiedDate < {})'.format(end_date_utc.isoformat())
+            sf_query = SF_QUERY + f' AND ({date_column} >= {start_date_utc.isoformat()})'
+            sf_query += f' AND ({date_column} < {end_date_utc.isoformat()})'
             #remove all newlines and extra whitespace in case its messing with HTML encoding
             sf_query = ' '.join(sf_query.split())
             print(sf_query)
@@ -149,13 +165,13 @@ def sync(day_refresh, year_refresh, month_refresh):
                 start_date_dt = datetime.strptime(day_refresh, '%Y-%m-%d %H:%H:%S %z')
                 start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
             except ValueError as e:
-                messageTeams.send()
+                #messageTeams.send()
                 print('Date parameter is invalid')
                 raise e
             end_date = start_date_utc + timedelta(days=1)
 
-            sf_query += ' AND (LastModifiedDate >= {})'.format(start_date_utc.isoformat())
-            sf_query += ' AND (LastModifiedDate < {})'.format(end_date.isoformat())
+            sf_query += f' AND ({date_column} >= {start_date_utc.isoformat()})'
+            sf_query += f' AND ({date_column} < {end_date.isoformat()})'
 
             sf_rows = sf.query_all_iter(sf_query)
 
@@ -165,7 +181,7 @@ def sync(day_refresh, year_refresh, month_refresh):
 
         # Otherwise, grab rows by the last updated date from the DB.
         else:
-            print('Getting last updated date...')
+            print('Fetching new records from Salesforce by last modified date')
             max_db_query = f"select to_char(max(UPDATED_DATETIME),  'YYYY-MM-DD HH24:MI:SS.FF TZH:TZM') from {DEST_DB_ACCOUNT.upper()}.{DEST_TABLE.upper()}"
             print(f'Getting max updated date from Databridge: {max_db_query}')
             cur.execute(max_db_query)
@@ -173,14 +189,18 @@ def sync(day_refresh, year_refresh, month_refresh):
             print(f'Got {start_date_str}') 
             # Convert to UTC for salesforce querying
             start_date_dt = datetime.strptime(start_date_str, '%Y-%m-%d %H:%M:%S.%f %z')
-            start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
+            #start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
+            #start_date_utc = convert_to_dttz(start_date_dt, local_tz)
 
 
-            print(f'Converted start_date: {start_date_utc}')
-            sf_query += ' AND (LastModifiedDate > {})'.format(start_date_utc.isoformat())
+            #print(f'Converted start_date: {start_date_utc}')
+            #sf_query += f' AND ({date_column} > {start_date_utc.isoformat()})'
+            print(f'Converted start_date: {start_date_dt}')
+            sf_query_last_where = f' AND ({date_column} > {start_date_dt.isoformat()})'
+            print(f'Querying Salesforce with where: {sf_query_last_where}')
+            sf_query += sf_query_last_where
 
             try:
-                print('Fetching new records from Salesforce...')
                 #print("Salesforce Query: ", sf_query)
 
                 sf_rows = sf.query_all_iter(sf_query)
@@ -196,10 +216,10 @@ def process_rows(sf_rows):
     rows = []
 
     for i, sf_row in enumerate(sf_rows):
-        #if i % 20000 == 0 and i != 0:
-            #print(f'DEBUG: processed {i} rows...')
+        if i % 50000 == 0 and i != 0:
+            print(f'DEBUG: processed {i} rows...')
             #print(sf_row)
-            #print(f"DEBUG: on CaseNumber: {sf_row['CaseNumber']}")
+            print(f"DEBUG: on CaseNumber: {sf_row['CaseNumber']}")
         # process_row() is from common.py
         rows.append(process_row(sf_row, FIELD_MAP))
 
@@ -208,13 +228,14 @@ def process_rows(sf_rows):
         return
 
     print(f'Updating/adding {len(rows)} rows.')
+    write_log(f'Updating/adding {len(rows)} rows.')
 
     #Write to a temp csv to avoid memory issues:
     temp_csv = 'temp_sf_processed_rows.csv'
     #print(f'Writing to temp csv "{temp_csv}"...')
     rows = etl.fromdicts(rows)
 
-    print('Removing bad characters..')
+    #print('Removing bad characters..')
     # Remove caret and single quote characters, they are bad for AGO.
     rows.convert('description', lambda a, row: a.replace(row.description, row.description.strip('<>\'')))
     rows.convert('status_notes', lambda a, row: a.replace(row.status_notes, row.status_notes.strip('<>\'')))
@@ -228,7 +249,7 @@ def process_rows(sf_rows):
     etl.look(rows)
 
     # Truncate temp table
-    print(f'Truncating temp table "{TEMP_TABLE}"...')
+    #print(f'Truncating temp table "{TEMP_TABLE}"...')
     cur.execute(f'truncate table {DEST_DB_ACCOUNT}.{TEMP_TABLE}')
     #autocommit on above
     #dest_conn.commit()
@@ -236,7 +257,7 @@ def process_rows(sf_rows):
     #######################################
     # NOTE 6/13/2022
     # Geopetl is failing for now, so we'll do it ourselves.
-    print(f'Writing to temp table "{TEMP_TABLE}"...')
+    #print(f'Writing to temp table "{TEMP_TABLE}"...')
     #rows.tooraclesde(dest_conn, DEST_TEMP_TABLE)
     date_fields = ['REQUESTED_DATETIME', 'EXPECTED_DATETIME', 'UPDATED_DATETIME', 'CLOSED_DATETIME']
 
@@ -271,7 +292,7 @@ def process_rows(sf_rows):
                 val_rows = []
 
         if val_rows:
-            print("Inserting remaining rows...")
+            #print("Inserting remaining rows...")
             cur.executemany(None, val_rows, batcherrors=False)
             #autocommit on above
             #dest_conn.commit() 
@@ -284,7 +305,7 @@ def process_rows(sf_rows):
     #print(f'Executing UPDATE_COUNT_STMT: {UPDATE_COUNT_STMT}')
     cur.execute(UPDATE_COUNT_STMT)
     update_count = cur.fetchone()[0]
-    print(f'Deleting updated records by matching up whats in the temp table..')
+    #print(f'Deleting updated records by matching up whats in the temp table..')
     #print(f'DEL_STMT: {DEL_STMT}')
     cur.execute(DEL_STMT)
     #autocommit on above
@@ -296,7 +317,7 @@ def process_rows(sf_rows):
     #print(f'Appending new records to prod table {DEST_TABLE} with {dest_conn} via geopetl...')
     #rows.appendoraclesde(dest_conn, DEST_TABLE)
 
-    print(f'Appending new records to table {DEST_TABLE}.')
+    #print(f'Appending new records to table {DEST_TABLE}.')
     headers_str = '''
     SERVICE_REQUEST_ID, STATUS, STATUS_NOTES, SERVICE_NAME, SERVICE_CODE, DESCRIPTION, AGENCY_RESPONSIBLE, SERVICE_NOTICE, ADDRESS, ZIPCODE, MEDIA_URL, PRIVATE_CASE, DESCRIPTION_FULL, SUBJECT, TYPE_, UPDATED_DATETIME, EXPECTED_DATETIME, CLOSED_DATETIME, REQUESTED_DATETIME, SHAPE, OBJECTID
     '''
@@ -344,6 +365,8 @@ def process_rows(sf_rows):
     # we don't need to be spammed with success messages
     #messageTeams.text(message)
     #messageTeams.send()
+
+    write_log(f'Success.')
 
 
 if __name__ == '__main__':
