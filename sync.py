@@ -249,7 +249,7 @@ def process_rows(sf_rows):
     etl.look(rows)
 
     # Truncate temp table
-    #print(f'Truncating temp table "{TEMP_TABLE}"...')
+    print(f'Truncating temp table "{TEMP_TABLE}"...')
     cur.execute(f'truncate table {DEST_DB_ACCOUNT}.{TEMP_TABLE}')
     #autocommit on above
     #dest_conn.commit()

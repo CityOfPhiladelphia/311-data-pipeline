@@ -8,7 +8,8 @@ cx_Oracle==8.3.0
 arrow==1.2.1
 click==8.0.3
 petl==1.7.4
--e git+https://github.com/CityOfPhiladelphia/geopetl.git#egg=geopetl
+#-e git+https://github.com/CityOfPhiladelphia/geopetl.git#egg=geopetl
+git+https://github.com/CityOfPhiladelphia/geopetl.git#egg=geopetl
 pytz==2021.3
 simple-salesforce==1.11.4
 pymsteams==0.2.0

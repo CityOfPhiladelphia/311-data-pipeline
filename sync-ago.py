@@ -140,7 +140,7 @@ def sync(day):
         if new_row['description_full']:
             new_row['description_full'] = new_row['description_full'].read()
 
-        clean_columns = ['description', 'description_full', 'status_notes']
+        clean_columns = ['description', 'description_full', 'status_notes', 'subject']
         # Clean our designated row of non-utf-8 characters or other undesirables that makes AGO mad.
         # If you pass multiple values separated by a comma, it will perform on multiple colmns
         for column in clean_columns:
