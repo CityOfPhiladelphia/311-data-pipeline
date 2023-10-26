@@ -499,13 +499,20 @@ def sync(day):
         outstats = [{"statisticType":"max", "onStatisticField": "UPDATED_DATETIME"}]
         latest_time = query_features(outstats=outstats)
 
-        # It gets returned as a unix timestamp, so convert it back.
-        print('Unix time returned by AGO: ' + str(latest_time.sdf['MAX_UPDATED_DATETIME'][0]))
+        # We get a "<class 'pandas._libs.tslibs.timestamps.Timestamp'>" type object returned here.
+        print('Time returned by AGO: ' + str(latest_time.sdf['MAX_UPDATED_DATETIME'][0]))
         assert latest_time.sdf['MAX_UPDATED_DATETIME'][0]
+        
+        # Convert to unix timestamp using pandas method timestamp() and then feed into python datetime module.
+        unix_time = int(latest_time.sdf['MAX_UPDATED_DATETIME'][0].timestamp())
+        print(f'Unix time: {unix_time}')
+        max_ago_dt = datetime.datetime.fromtimestamp(unix_time)
 
-        # Datetime expects a "seconds" formatted unix timestamp, not in milliseconds. Convert by dividing by 1000
-        max_ago_dt = datetime.datetime.fromtimestamp( latest_time.sdf['MAX_UPDATED_DATETIME'][0]/ 1000 )
+        # 10/26/2023 update: We now get the timestamp in our timezone (but still naive), it used to be in UTC.
+        # I don't trust AGO to not switch it back without wanraing so keeping the below code around.
+        # The end result is that the time is unchanged regardless, so no harm.
 
+        # Original comment:
         # AGO is doing something funny where it returns the timestamp as timezone naive UTC
         # so we get a UTC timestamp, but when we attempt to convert to local time, it again subtracts 4 or 5 hours
         # Which then puts us 8 hours behind...
