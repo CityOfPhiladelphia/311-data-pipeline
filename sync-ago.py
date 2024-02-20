@@ -10,6 +10,7 @@ from time import sleep
 import petl as etl
 import pyproj
 import shapely.wkt
+import citygeo_secrets
 from shapely.ops import transform as shapely_transformer
 from config import *
 import click
@@ -31,10 +32,12 @@ def sync(day):
                                                always_xy=True)
 
     print('Connecting to AGO...')
-    org = GIS(url='https://phl.maps.arcgis.com',
-                username='maps.phl.data',
-                password=MAPS_PASSWORD,
+    ago_creds = citygeo_secrets.connect_with_secrets(connect_maps_ago, "maps.phl.data")
+    org = GIS(url=ago_creds.get('url'),
+                username=ago_creds.get('login'),
+                password=ago_creds.get('password'),
                 verify_cert=False)
+
     print('Connected to AGO.\n')
 
     flayer = org.content.get(SALESFORCE_AGO_ITEMID)
@@ -49,21 +52,9 @@ def sync(day):
     else:
         raise AssertionError('Item is not geometric.\n')
 
-
-    def database_connect():
-        user = 'sde'
-        password = DATABRIDGE_SDE_PASSWORD
-        host = DATABRIDGE_HOST
-        service_name = 'GISDBP'
-        port = 1521
-        dsn = cx_Oracle.makedsn(host, port, service_name)
-        # Connect to database
-        db_connect = cx_Oracle.connect(user, password, dsn, encoding="UTF-8")
-        print('Connected to %s' % db_connect)
-        cursor = db_connect.cursor()
-        return cursor
-
-    cursor = database_connect()
+    
+    sde_connection = citygeo_secrets.connect_with_secrets(connect_sde, "SDE","databridge-oracle/hostname")
+    cursor = sde_connection.cursor()
     print("Connected to Oracle!\n")
 
 
