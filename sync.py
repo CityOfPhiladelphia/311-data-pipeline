@@ -18,6 +18,7 @@ import petl as etl
 import geopetl
 import requests
 from requests.adapters import HTTPAdapter, Retry
+import citygeo_secrets
 from common import *
 from config import *
 
