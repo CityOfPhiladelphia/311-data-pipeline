@@ -32,7 +32,7 @@ from config import *
 if TEST:
     #connect to test DB
     # DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_TEST_DSN}'
-    dest_conn = citygeo_secrets.connect_with_secrets(connect_311, "GIS_311","databridge-oracle/hostname-testing")
+    dest_conn = citygeo_secrets.connect_with_secrets(connect_311_test, "GIS_311","databridge-oracle/hostname-testing")
 else:
     # connect to prod DB
     # DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_PROD_DSN}'
