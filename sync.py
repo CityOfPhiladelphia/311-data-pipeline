@@ -32,17 +32,11 @@ from config import *
 # if this is set to true in the config
 if TEST:
     #connect to test DB
-    # DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_TEST_DSN}'
     dest_conn = citygeo_secrets.connect_with_secrets(connect_311_test, "GIS_311","databridge-oracle/hostname-testing")
 else:
     # connect to prod DB
-    # DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_PROD_DSN}'
     dest_conn = citygeo_secrets.connect_with_secrets(connect_311, "GIS_311","databridge-oracle/hostname")
 
-
-# Connect to database
-#print("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
-#dest_conn = citygeo_secrets.connect_with_secrets(connect_311, "GIS_311","databridge-oracle/hostname")
 
 dest_conn.autocommit = True
 # 1200000 ms is a 20 minute timeout for really big queries
