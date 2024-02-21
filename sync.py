@@ -18,6 +18,7 @@ import petl as etl
 import geopetl
 import requests
 from requests.adapters import HTTPAdapter, Retry
+import citygeo_secrets
 from common import *
 from config import *
 
@@ -30,13 +31,13 @@ from config import *
 
 # if this is set to true in the config
 if TEST:
-    DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_TEST_DSN}'
+    #connect to test DB
+    dest_conn = citygeo_secrets.connect_with_secrets(connect_311_test, "GIS_311","databridge-oracle/hostname-testing")
 else:
-    DEST_DB_CONN_STRING = f'{DEST_DB_ACCOUNT}/{THREEONEONE_PASSWORD}@{DEST_PROD_DSN}'
+    # connect to prod DB
+    dest_conn = citygeo_secrets.connect_with_secrets(connect_311, "GIS_311","databridge-oracle/hostname")
 
-# Connect to database
-#print("Connecting to oracle, DNS: {}".format(DEST_DB_CONN_STRING)) 
-dest_conn = cx_Oracle.connect(DEST_DB_CONN_STRING)
+
 dest_conn.autocommit = True
 # 1200000 ms is a 20 minute timeout for really big queries
 # Nvm, 0 for infinite
@@ -59,10 +60,11 @@ def write_log(msg):
 @click.option('--year_refresh', '-y', default=None, help='Retrieve records that were updated in a specific year, then upsert them. Ex: 2017')
 @click.option('--date_column', '-c', default='LastModifiedDate', help='Date column to select cases by from Salesforce. Default is "LastModifiedDate". You can consider using "CreatedDate" when doing full refreshes.')
 def sync(day_refresh, year_refresh, month_refresh, date_column):
+        salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "SalesForce API" )
         # Connect to Salesforce
-        sf = Salesforce(username=SF_USER, \
-                        password=SF_PASSWORD, \
-                        security_token=SF_TOKEN)
+        sf = Salesforce(username=salesforce_creds.get('login'), \
+                        password=salesforce_creds.get('password'), \
+                        security_token=salesforce_creds.get('token'))
         # supposedly SalesForce() takes a timeout parameter, but it doesn't appear to work.
         # Instead, we can apparently set the tmeout anyway by inserting our own request session
         #session = requests.Session()
