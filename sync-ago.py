@@ -39,8 +39,9 @@ def sync(day):
                 verify_cert=False)
 
     print('Connected to AGO.\n')
-
-    flayer = org.content.get(SALESFORCE_AGO_ITEMID)
+    
+    salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "SalesForce API" )
+    flayer = org.content.get(salesforce_creds.get('AGO_item_id'))
     LAYER_OBJECT = flayer.layers[0]
     print(LAYER_OBJECT)
 
