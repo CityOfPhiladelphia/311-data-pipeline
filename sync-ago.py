@@ -11,7 +11,7 @@ import petl as etl
 import pyproj
 import shapely.wkt
 from shapely.ops import transform as shapely_transformer
-from config import *
+from config_old import *
 import click
 
 
