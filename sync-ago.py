@@ -40,8 +40,7 @@ def sync(day):
 
     print('Connected to AGO.\n')
     
-    salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "SalesForce API_test" )
-    print('''salesforce_creds.get('AGO_item_id') ''', salesforce_creds.get('AGO_item_id'))
+    salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "salesforce API copy" )
     flayer = org.content.get(salesforce_creds.get('AGO_item_id'))
     LAYER_OBJECT = flayer.layers[0]
     print(LAYER_OBJECT)
