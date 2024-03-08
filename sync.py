@@ -60,11 +60,12 @@ def write_log(msg):
 @click.option('--year_refresh', '-y', default=None, help='Retrieve records that were updated in a specific year, then upsert them. Ex: 2017')
 @click.option('--date_column', '-c', default='LastModifiedDate', help='Date column to select cases by from Salesforce. Default is "LastModifiedDate". You can consider using "CreatedDate" when doing full refreshes.')
 def sync(day_refresh, year_refresh, month_refresh, date_column):
-        salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "salesforce API copy" )
-        # Connect to Salesforce
-        sf = Salesforce(username=salesforce_creds.get('login'), \
-                        password=salesforce_creds.get('password'), \
-                        security_token=salesforce_creds.get('token'))
+        # salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "salesforce API copy" )
+        # # Connect to Salesforce
+        # sf = Salesforce(username=salesforce_creds.get('login'), \
+        #                 password=salesforce_creds.get('password'), \
+        #                 security_token=salesforce_creds.get('token'))
+        sf = citygeo_secrets.connect_with_secrets(connect_salesforce, "salesforce API copy" )
         # supposedly SalesForce() takes a timeout parameter, but it doesn't appear to work.
         # Instead, we can apparently set the tmeout anyway by inserting our own request session
         #session = requests.Session()
