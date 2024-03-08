@@ -1,7 +1,6 @@
 import os, sys
 import pytz
 import pandas as pd
-from arcgis import GIS
 from arcgis.features import FeatureLayerCollection
 import datetime
 import cx_Oracle
@@ -31,17 +30,7 @@ def sync(day):
                                                f'epsg:{AGO_SRID}',
                                                always_xy=True)
 
-    print('Connecting to AGO...')
-    ago_creds = citygeo_secrets.connect_with_secrets(connect_maps_ago, "maps.phl.data")
-    org = GIS(url=ago_creds.get('url'),
-                username=ago_creds.get('login'),
-                password=ago_creds.get('password'),
-                verify_cert=False)
-
-    print('Connected to AGO.\n')
-    
-    salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "salesforce API copy" )
-    flayer = org.content.get(salesforce_creds.get('AGO_item_id'))
+    flayer = citygeo_secrets.connect_with_secrets(get_salesforce_ago_layer, "salesforce API copy" )
     LAYER_OBJECT = flayer.layers[0]
     print(LAYER_OBJECT)
 
