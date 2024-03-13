@@ -1,10 +1,11 @@
 arcgis==1.7.1
 cython
-psycopg2-binary==2.9.3
+cx_Oracle
+psycopg-binary==3.1.18
+psycopg2-binary
 pyproj==3.2.1
 shapely==1.8.0
 config
-cx_Oracle==8.3.0
 arrow==1.2.1
 click==8.0.3
 petl==1.7.4

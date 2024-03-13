@@ -1,41 +1,51 @@
 import os, sys
 import pytz
 import pandas as pd
-from arcgis import GIS
-from arcgis.features import FeatureLayerCollection
 import datetime
-import cx_Oracle
+import psycopg2
+import psycopg2.extras
 from pprint import pprint
 from time import sleep
 import petl as etl
 import pyproj
 import shapely.wkt
 from shapely.ops import transform as shapely_transformer
-from config_old import *
+import citygeo_secrets
+from config import *
+from common import *
 import click
+import requests
+import warnings
+
+# Specifically to ignore pandas deprecation warnings in arcgis.
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# import after so we don't get userwarnings
+from arcgis import GIS
+from arcgis.features import FeatureLayerCollection
 
 
 @click.command()
+@click.option('--prod', is_flag=True)
 @click.option('--day', '-d', help='Retrieve and update records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
-def sync(day):
+def sync(day, prod):
     # They're the same for saleforce so we should need no projecting of points.
     # Hardcode this to make the code work, but we can modularize this lter.
-    IN_SRID = 4326
-    AGO_SRID = 4326
-
-    PRIMARY_KEY = 'SERVICE_REQUEST_ID'
 
     '''transformer needs to be defined outside of our row loop to speed up projections.'''
     TRANSFORMER = pyproj.Transformer.from_crs(f'epsg:{IN_SRID}',
                                                f'epsg:{AGO_SRID}',
                                                always_xy=True)
 
+    
     print('Connecting to AGO...')
-    org = GIS(url='https://phl.maps.arcgis.com',
-                username='maps.phl.data',
-                password=MAPS_PASSWORD,
-                verify_cert=False)
+    org = citygeo_secrets.connect_with_secrets(connect_ago_arcgis, 'maps.phl.data')
     print('Connected to AGO.\n')
+
+    if prod:
+        SALESFORCE_AGO_ITEMID = SALESFORCE_AGO_ITEMID_PROD
+    else:
+        SALESFORCE_AGO_ITEMID = SALESFORCE_AGO_ITEMID_TEST
 
     flayer = org.content.get(SALESFORCE_AGO_ITEMID)
     LAYER_OBJECT = flayer.layers[0]
@@ -49,23 +59,10 @@ def sync(day):
     else:
         raise AssertionError('Item is not geometric.\n')
 
+    conn = citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
+    cursor = conn.cursor()
 
-    def database_connect():
-        user = 'sde'
-        password = DATABRIDGE_SDE_PASSWORD
-        host = DATABRIDGE_HOST
-        service_name = 'GISDBP'
-        port = 1521
-        dsn = cx_Oracle.makedsn(host, port, service_name)
-        # Connect to database
-        db_connect = cx_Oracle.connect(user, password, dsn, encoding="UTF-8")
-        print('Connected to %s' % db_connect)
-        cursor = db_connect.cursor()
-        return cursor
-
-    cursor = database_connect()
-    print("Connected to Oracle!\n")
-
+    print("Connected to Databridge!\n")
 
     def project_and_format_shape(wkt_shape):
         ''' Helper function to help format spatial fields properly for AGO '''
@@ -131,15 +128,6 @@ def sync(day):
 
 
     def format_row(row):
-
-        # Convert cx_Oracle.LOB to simple string via the read method
-        # Source: https://stackoverflow.com/a/12590977
-        new_row['shape'] = new_row['shape'].read()
-
-        # Description full is a LOB object too if it's not empty.
-        if new_row['description_full']:
-            new_row['description_full'] = new_row['description_full'].read()
-
         clean_columns = ['description', 'description_full', 'status_notes', 'subject']
         # Clean our designated row of non-utf-8 characters or other undesirables that makes AGO mad.
         # If you pass multiple values separated by a comma, it will perform on multiple colmns
@@ -431,15 +419,16 @@ def sync(day):
 
 
     # First let's do a pre-check and assert column headers are what we expect.
-    expected_headers = ['CLOSED_DATETIME','OBJECTID','SERVICE_REQUEST_ID','STATUS','STATUS_NOTES','SERVICE_NAME',
-                        'SERVICE_CODE','DESCRIPTION','AGENCY_RESPONSIBLE','SERVICE_NOTICE','REQUESTED_DATETIME',
-                        'UPDATED_DATETIME','EXPECTED_DATETIME','CLOSED_DATETIME','ADDRESS','ZIPCODE','MEDIA_URL','PRIVATE_CASE',
-                        'DESCRIPTION_FULL','SUBJECT','TYPE_','SHAPE',]
+    expected_headers = ['closed_datetime','objectid','service_request_id','status','status_notes','service_name',
+                        'service_code','description','agency_responsible','service_notice','requested_datetime',
+                        'updated_datetime','expected_datetime','closed_datetime','address','zipcode','media_url','private_case',
+                        'description_full','subject','type_','police_district','council_district_num','pinpoint_area','parent_id','shape','gdb_geomattr_data']
 
     headers_stmt = f'''
-    SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS
-        WHERE TABLE_NAME = 'SALESFORCE_CASES'
-        AND OWNER = 'GIS_311'
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = '{DEST_DB_ACCOUNT}'
+        AND table_name   = '{DEST_TABLE}';
     '''
     cursor.execute(headers_stmt)
     headers = cursor.fetchall()
@@ -453,21 +442,23 @@ def sync(day):
     # We don't want this in our SELECT statements, we'll instead grab them later like this:
     # sde.st_astext(SHAPE) as SHAPE
     # AGO also doesn't return shape as a field so we need this out for a field comparison.
-    headers_list.remove('SHAPE')
+    headers_list.remove('shape')
+    #gdb_geomattr_data is always added in postgres datasets. Ignore.
+    headers_list.remove('gdb_geomattr_data')
 
     # Original list without our 'to_char' conversions so we can do an accurate field comparison to AGO
     # Copy the list so it's not just a memory reference
     headers_list_original = headers_list.copy()
 
-    headers_list.append('sde.st_astext(SHAPE) as SHAPE')
+    headers_list.append('public.st_astext(SHAPE) as shape')
 
     # NOTE: cx_Oracle has a bug where it doesn't return timezone information
     # so dates come in timezone naive.
     # https://github.com/oracle/python-cx_Oracle/issues/13
     # To get around this, convert datetime to string
     for i,header in enumerate(headers_list):
-        if 'DATETIME' in header:
-            headers_list[i] = "to_char({0},'YYYY-MM-DD HH24:MI:SS TZHTZM') AS {0}".format(header)
+        if 'datetime' in header:
+            headers_list[i] = "to_char({0},'YYYY-MM-DD HH24:MI:SS TZH:TZM') AS {0}".format(header)
 
     # Join into string to be used in select statements.
     headers_str = ','.join(headers_list)
@@ -479,8 +470,12 @@ def sync(day):
     ago_fields.sort()
     db_fields.sort()
 
+    if 'objectid' in ago_fields:
+        ago_fields.remove('objectid')
+
     print(f'Comparing AGO fields: "{ago_fields}" and databridge fields: "{db_fields}"')
-    assert db_fields == ago_fields
+    diff = set(ago_fields) - set(db_fields)
+    assert db_fields == ago_fields, f'field differences found: {diff}'
 
     ###############################
     # 1. Grab the max date in AGO
@@ -496,20 +491,20 @@ def sync(day):
     else:
         # Grab the max UPDATED_DATETIME from AGO.
         print('\nGrabbing max updated_datetime from AGO...')
-        outstats = [{"statisticType":"max", "onStatisticField": "UPDATED_DATETIME"}]
+        outstats = [{"statisticType":"max", "onStatisticField": "updated_datetime"}]
         latest_time = query_features(outstats=outstats)
 
         # We get a "<class 'pandas._libs.tslibs.timestamps.Timestamp'>" type object returned here.
-        print('Time returned by AGO: ' + str(latest_time.sdf['MAX_UPDATED_DATETIME'][0]))
-        assert latest_time.sdf['MAX_UPDATED_DATETIME'][0]
+        print('Time returned by AGO: ' + str(latest_time.sdf['MAX_updated_datetime'][0]))
+        assert latest_time.sdf['MAX_updated_datetime'][0]
         
         # Convert to unix timestamp using pandas method timestamp() and then feed into python datetime module.
-        unix_time = int(latest_time.sdf['MAX_UPDATED_DATETIME'][0].timestamp())
+        unix_time = int(latest_time.sdf['MAX_updated_datetime'][0].timestamp())
         print(f'Unix time: {unix_time}')
         max_ago_dt = datetime.datetime.fromtimestamp(unix_time)
 
         # 10/26/2023 update: We now get the timestamp in our timezone (but still naive), it used to be in UTC.
-        # I don't trust AGO to not switch it back without wanraing so keeping the below code around.
+        # I don't trust AGO to not switch it back without warning so keeping the below code around.
         # The end result is that the time is unchanged regardless, so no harm.
 
         # Original comment:
@@ -535,31 +530,32 @@ def sync(day):
     # If a day param was a passed, grab only records for that day.
     if day:
         databridge_stmt=f'''
-        SELECT {PRIMARY_KEY},UPDATED_DATETIME
-            FROM GIS_311.SALESFORCE_CASES
-            WHERE UPDATED_DATETIME >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
-            AND UPDATED_DATETIME < to_date('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
-            ORDER BY UPDATED_DATETIME ASC
+        SELECT {PRIMARY_KEY},updated_datetime
+            FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
+            WHERE updated_datetime >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            AND updated_datetime < to_date('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            ORDER BY updated_datetime ASC
         '''
     # Else grab recrods from the max updated_datetime we have in AGO and forward
     else:
         databridge_stmt=f'''
-        SELECT {PRIMARY_KEY},UPDATED_DATETIME
-            FROM GIS_311.SALESFORCE_CASES
-            WHERE UPDATED_DATETIME >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
-            ORDER BY UPDATED_DATETIME ASC
+        SELECT {PRIMARY_KEY},updated_datetime
+            FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
+            WHERE updated_datetime >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            ORDER BY updated_datetime ASC
         '''
 
+    cursor_dict = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
     print(f'Grabbing all {PRIMARY_KEY}s with same date or greater with query: {databridge_stmt}')
-    cursor.execute(databridge_stmt)
-    cursor.rowfactory = lambda *args: dict(zip([d[0] for d in cursor.description], args))
-    databridge_matches = cursor.fetchall()
+    cursor_dict.execute(databridge_stmt)
+    databridge_matches = cursor_dict.fetchall()
 
     if len(databridge_matches) == 0:
         print('Nothing to update!')
         return
     print(f'\nTotal amount of rows to update in AGO from Databridge: {len(databridge_matches)}\n')
-    first = databridge_matches[0]['SERVICE_REQUEST_ID']
+    first = databridge_matches[0][PRIMARY_KEY]
     #print(f'First in databridge return, service_request_id: {first}')
 
     ##############################################
@@ -578,21 +574,19 @@ def sync(day):
         # Grab the full row from databridge
         databridge_stmt = f'''
             SELECT {headers_str}
-                FROM GIS_311.SALESFORCE_CASES
-                WHERE {PRIMARY_KEY}  = {working_primary_key}
+                FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
+                WHERE {PRIMARY_KEY} = {working_primary_key}
         '''
-        cursor.execute(databridge_stmt)
-        cursor.rowfactory = lambda *args: dict(zip([d[0] for d in cursor.description], args))
-        new_row = cursor.fetchall()
+        cursor_dict.execute(databridge_stmt)
+        new_row = cursor_dict.fetchall()
         if len(new_row) > 1:
             raise AssertionError(f'Should have only gotten 1 row back, instead got this many: {len(new_row)}')
         if len(new_row) == 0:
             # Retry once more against databridge if we encounter this
             # I don't know why oracle is doing this occasionally, the queries always work when I run them manually
             sleep(10)
-            cursor.execute(databridge_stmt)
-            cursor.rowfactory = lambda *args: dict(zip([d[0] for d in cursor.description], args))
-            new_row = cursor.fetchall()
+            cursor_dict.execute(databridge_stmt)
+            new_row = cursor_dict.fetchall()
             if len(new_row) == 0:
                 raise AssertionError(f'Got nothing back from Databridge with query: {databridge_stmt}')
             if len(new_row) > 1:

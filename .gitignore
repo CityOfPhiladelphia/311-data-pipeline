@@ -1,3 +1,6 @@
+# Don't upload keeper config
+client-config.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

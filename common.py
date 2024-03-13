@@ -1,29 +1,99 @@
 import arrow
+import psycopg2
+import os
+from config import *
+from databridge_etl_tools.postgres.postgres import Postgres, Postgres_Connector
+from arcgis import GIS
 
-# These agencies use different field for their status notes.
-LI_STREETS_WATER = [
-    'License & Inspections',
-    'Licenses & Inspections',
-    'Licenses & Inspections- L&I',
-    'Streets Department',
-    'Water Department (PWD)',
-]
+# Setup global database vars/objects to be used between our two functions below.
+def connect_databridge(creds: dict, prod):
+    db2_creds = creds['databridge-v2/philly311']
+    if prod:
+        print('Connecting to PROD databridge database!')
+        host = creds['databridge-v2/hostname']['host']
+    else:
+        print('Connecting to test databridge database.')
+        host = creds['databridge-v2/hostname-testing']['host']
 
-# TEMP
-TEXT_FIELDS = [
-    'status',
-    'status_notes',
-    'service_name',
-    'service_code',
-    'description',
-    'agency_responsible',
-    'service_notice',
-    'address',
-    'zipcode',
-    'media_url',
-    'subject',
-    'type_',
-]
+    conn = psycopg2.connect(f"user={db2_creds['login']} password={db2_creds['password']} host={host} dbname=databridge")
+    return conn
+
+def create_dbtools_connector(creds: dict, prod):
+    # Makes a connector object with databridge_etl_tools.postgres.postgres.Postgres_Connector
+    # for use with the databridge_etl_tools load function
+    db2_creds = creds['databridge-v2/philly311']
+    if prod:
+        print('Connecting to PROD databridge database!')
+        host = creds['databridge-v2/hostname']['host']
+    else:
+        print('Connecting to test databridge database.')
+        host = creds['databridge-v2/hostname-testing']['host']
+
+    # confirm login works
+    conn = psycopg2.connect(f"user={db2_creds['login']} password={db2_creds['password']} host={host} dbname=databridge")
+    # return dbtools connector object
+    connector = Postgres_Connector(connection_string=f"postgresql://{db2_creds['login']}:{db2_creds['password']}@{host}:5432/databridge")
+    return connector
+
+
+import boto3
+import citygeo_secrets
+
+
+def connect_aws_s3(creds: dict):
+    aws_creds = creds['Citygeo AWS Key Pair PROD']
+    # Create an IAM client
+    iam_client = boto3.client('iam',
+        aws_access_key_id       = aws_creds['access_key'],
+        aws_secret_access_key   = aws_creds['secret_key'],
+        region_name             = aws_creds['region']
+        )
+
+    # Get user information (this is a simple IAM operation)
+    user_info = iam_client.get_user()
+
+    # If the operation was successful, the key pair is valid
+    print("AWS key pair is valid.")
+    print('Connected UserName: ' + user_info['User']['UserName'])
+
+    # Export for usage by dbtools
+    os.environ['AWS_ACCESS_KEY_ID'] = aws_creds['access_key']
+    os.environ['AWS_SECRET_ACCESS_KEY'] = aws_creds['secret_key']
+    
+    # Now connect to another service and return the object
+    s3 = boto3.client('s3',
+        aws_access_key_id       = aws_creds['access_key'],
+        aws_secret_access_key   = aws_creds['secret_key'],
+        region_name             = aws_creds['region']
+        )
+    return s3
+
+
+
+def connect_ago_token(creds: dict):
+    creds = creds['maps.phl.data']
+    token_url = 'https://arcgis.com/sharing/rest/generateToken'
+    data = {'username': creds['login'],
+            'password': creds['password'],
+            'referer': 'https://www.arcgis.com',
+            'f': 'json'}
+    try:
+        ago_token = requests.post(token_url, data).json()['token']
+    except KeyError as e:
+        raise Exception('AGO login failed!')
+    return ago_token
+
+def connect_ago_arcgis(creds: dict):
+    creds = creds['maps.phl.data']
+    org = GIS(url='https://phl.maps.arcgis.com',
+                username=creds['login'],
+                password=creds['password'],
+                verify_cert=False)
+    return org
+
+def connect_salesforce(creds:dict):
+    d=creds['salesforce API copy']
+    return d
 
 def process_row(row, field_map):
     """
@@ -38,7 +108,7 @@ def process_row(row, field_map):
         x = float(row['Centerline__Longitude__s'])
         y = float(row['Centerline__Latitude__s'])
         if 0 not in [x, y]:
-            shape = 'POINT ({} {})'.format(x, y)
+            shape = 'SRID=2272;POINT ({} {})'.format(x, y) if x else 'POINT EMPTY'
     except (ValueError, TypeError):
         pass
     finally:
