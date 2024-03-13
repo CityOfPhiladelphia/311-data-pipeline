@@ -503,25 +503,12 @@ def sync(day, prod):
         print(f'Unix time: {unix_time}')
         max_ago_dt = datetime.datetime.fromtimestamp(unix_time)
 
-        # 10/26/2023 update: We now get the timestamp in our timezone (but still naive), it used to be in UTC.
-        # I don't trust AGO to not switch it back without warning so keeping the below code around.
-        # The end result is that the time is unchanged regardless, so no harm.
+        # AGO provides time in UTC, convert to EST to query our database
+        est = pytz.timezone('America/New_York')
+        converted = max_ago_dt.astimezone(est)
+        max_ago_dt_str = converted.strftime("%Y-%m-%d %H:%M:%S %z")
 
-        # Original comment:
-        # AGO is doing something funny where it returns the timestamp as timezone naive UTC
-        # so we get a UTC timestamp, but when we attempt to convert to local time, it again subtracts 4 or 5 hours
-        # Which then puts us 8 hours behind...
-        # We need this in local time to query Databridge effectively, so we'll manually adjust it.
-        # So my solution is to simply check if the timestamp is in DST or not,
-        # add the hours myself and then keep it timezone naive *shrug
-        if max_ago_dt.dst() != datetime.timedelta(0):
-            max_ago_dt = max_ago_dt + datetime.timedelta(hours=4)
-        else:
-            max_ago_dt = max_ago_dt + datetime.timedelta(hours=5)
-
-        max_ago_dt_str = max_ago_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-        print('Max AGO Timestamp after timezone correction: ' + str(max_ago_dt_str) + '\n')
+        print('Max AGO Timestamp after timezone conversion: ' + str(max_ago_dt_str) + '\n')
 
     ############################################
     # 2. Compare against max date in databridge
@@ -532,8 +519,8 @@ def sync(day, prod):
         databridge_stmt=f'''
         SELECT {PRIMARY_KEY},updated_datetime
             FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
-            WHERE updated_datetime >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
-            AND updated_datetime < to_date('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            WHERE updated_datetime >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS TZH:TZM')\
+            AND updated_datetime < to_date('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS TZH:TZM')\
             ORDER BY updated_datetime ASC
         '''
     # Else grab recrods from the max updated_datetime we have in AGO and forward
