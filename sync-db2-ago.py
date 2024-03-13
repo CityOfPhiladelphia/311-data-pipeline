@@ -580,7 +580,8 @@ def sync(day, prod):
         cursor_dict.execute(databridge_stmt)
         new_row = cursor_dict.fetchall()
         if len(new_row) > 1:
-            raise AssertionError(f'Should have only gotten 1 row back, instead got this many: {len(new_row)}')
+            print(new_row)
+            raise AssertionError(f'Should have only gotten 1 row back, instead got this many: {len(new_row)}, {PRIMARY_KEY}: {row[PRIMARY_KEY]}')
         if len(new_row) == 0:
             # Retry once more against databridge if we encounter this
             # I don't know why oracle is doing this occasionally, the queries always work when I run them manually

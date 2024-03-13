@@ -4,6 +4,7 @@ import csv
 from datetime import date as date_obj
 from datetime import datetime, timedelta
 from dateutil import parser as dt_parser
+import pytz
 import psycopg2
 from psycopg2.extras import execute_values
 #import isoformat
@@ -165,11 +166,14 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
         print(f'Getting max updated date from Databridge: {max_db_query}')
         cur.execute(max_db_query)
         start_date_str = cur.fetchone()[0]
-        print(f'Got {start_date_str}') 
-        # Convert to UTC for salesforce querying
+        print(f'Got {start_date_str}')
+        # Make sure it's in our timezone
+        est = pytz.timezone('America/New_York')
         start_date_dt = datetime.strptime(start_date_str, '%Y-%m-%d %H:%M:%S %z')
-        print(f'Converted start_date: {start_date_dt}')
-        sf_query_last_where = f' AND ({date_column} > {start_date_dt.isoformat()})'
+        converted_datetime = start_date_dt.astimezone(est)
+
+        print(f'Converted start_date: {converted_datetime}')
+        sf_query_last_where = f' AND ({date_column} > {converted_datetime.isoformat()})'
         print(f'Querying Salesforce with where: {sf_query_last_where}')
         sf_query += sf_query_last_where
 
