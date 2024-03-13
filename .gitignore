@@ -95,6 +95,5 @@ venv3/
 
 # Project-specific
 *.csv
-config.py
 logs/
 *.bat

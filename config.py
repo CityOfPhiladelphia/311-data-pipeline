@@ -1,26 +1,45 @@
-# PROD/TEST SETTINGS (either GISDPB or GISDBP_T):
-TEST=False
 # Logging settings.
 LOG_LEVEL               = 'INFO'
 LOG_PATH                = './logs/sync.log'
 
-# Secrets for sync-ago.py
-MAPS_PASSWORD = 'password'
-SALESFORCE_AGO_ITEMID = '1234abcdf'
-DATABRIDGE_SDE_PASSWORD = 'password'
-DATABRIDGE_HOST = 'database.host'
-DATABRIDGE_DB = 'database'
+IN_SRID = 4326
+AGO_SRID = 4326
 
-THREEONEONE_PASSWORD = 'password'
+PRIMARY_KEY = 'service_request_id'
+
+SALESFORCE_AGO_ITEMID_PROD = ''
+SALESFORCE_AGO_ITEMID_TEST = '3fca8f1d9a9d475a942e47fb34a85e93'
 
 # These describe the destination (enterprise) dataset.
-# These describe the destination (enterprise) dataset.
-DEST_PROD_DSN = ''
-DEST_TEST_DSN = ''
-DEST_DB_ACCOUNT         = ''
-DEST_TABLE              = 'SALESFORCE_CASES'
+DEST_DB_ACCOUNT         = 'philly311'
+DEST_TABLE              = 'salesforce_cases_raw'
 DEST_UPDATED_FIELD      = 'updated_datetime'
-TEMP_TABLE         = 'SALESFORCE_CASES_TEMP'
+TEMP_TABLE              = 'salesforce_cases_raw_temp'
+
+# These agencies use different field for their status notes.
+LI_STREETS_WATER = [
+    'License & Inspections',
+    'Licenses & Inspections',
+    'Licenses & Inspections- L&I',
+    'Streets Department',
+    'Water Department (PWD)',
+]
+
+# TEMP
+TEXT_FIELDS = [
+    'status',
+    'status_notes',
+    'service_name',
+    'service_code',
+    'description',
+    'agency_responsible',
+    'service_notice',
+    'address',
+    'zipcode',
+    'media_url',
+    'subject',
+    'type_',
+]
 
 
 # For deleting records which have since been updated.
@@ -49,22 +68,20 @@ FIELD_MAP = {
     'requested_datetime':       'CreatedDate',
     'updated_datetime':         'LastModifiedDate',
     'expected_datetime':        'Sla_date__c',
+    'closed_datetime':          'ClosedDate',
     'address':                  'Street__c',
     'zipcode':                  'ZipCode__c',
     'media_url':                'Media_Url__c',
     'private_case':             'Private_Case__c',
     'subject':                  'Subject',
-    'type_':                    'Type'
+    'type_':                    'Type',
+    'police_district':          'Police_District__c',
+    'council_district_num':     'Council_District_No__c',
+    'pinpoint_area':            'Pinpoint_Area__c',
+    'parent_id':                'SAG_Parent_Case_Number__c'
     # 'description_full':         'Description',
 }
 
-# Microsoft Teams Web Connector URL
-MSTEAMS_CONNECTOR             = 'https://phila.webhook.office.com/webhookb2/763c9a83-0f38-4eb2-abfc-e0f2f41b6fbb@2046864f-68ea-497d-af34-a6629a6cd700/IncomingWebhook/434dfb8c116d472f8f224cfae367cdc1/2f82d684-85a4-4131-95a3-3342e012faeb'
-
-# These are for querying Salesforce.
-SF_USER             = ''
-SF_PASSWORD         = ''
-SF_TOKEN            = ''
 # Most of the filtering for the public view we do in the database, but the
 # `Type` field is not part of the schema, so we have to filter those cases
 # when querying Salesforce.
@@ -76,6 +93,7 @@ SF_QUERY            = '''
                             Description,
                             CreatedDate,
                             LastModifiedDate,
+                            ClosedDate,
                             Case_Record_Type__c,
                             Centerline_2272x__c,
                             Centerline_2272y__c,
@@ -93,7 +111,11 @@ SF_QUERY            = '''
                             Close_Reason__c,
                             Status_Update__c,
                             Subject,
-                            Type
+                            Type,
+                            Police_District__c,
+                            Council_District_No__c,
+                            Pinpoint_Area__c,
+                            SAG_Parent_Case_Number__c
                         FROM Case
                         WHERE {}
                     '''.format(SF_WHERE)
