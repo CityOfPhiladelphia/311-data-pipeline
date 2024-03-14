@@ -13,6 +13,7 @@ import citygeo_secrets
 from shapely.ops import transform as shapely_transformer
 from config import *
 import click
+from utils import *
 
 
 @click.command()
