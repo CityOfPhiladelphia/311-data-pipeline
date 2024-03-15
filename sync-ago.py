@@ -31,7 +31,7 @@ def sync(day):
                                                f'epsg:{AGO_SRID}',
                                                always_xy=True)
 
-    flayer = citygeo_secrets.connect_with_secrets(get_salesforce_ago_layer, "salesforce API copy" )
+    flayer = citygeo_secrets.connect_with_secrets(get_salesforce_ago_layer, "salesforce API copy", "maps.phl.data" )
     LAYER_OBJECT = flayer.layers[0]
     print(LAYER_OBJECT)
 
