@@ -4,6 +4,7 @@ import os
 from config import *
 from databridge_etl_tools.postgres.postgres import Postgres, Postgres_Connector
 from arcgis import GIS
+import re
 
 # Setup global database vars/objects to be used between our two functions below.
 def connect_databridge(creds: dict, prod):
@@ -84,7 +85,10 @@ def connect_ago_token(creds: dict):
     return ago_token
 
 def connect_ago_arcgis(creds: dict):
-    creds = creds['maps.phl.data']
+    # Assume first item passed to us is the user specific creds
+    first = next(iter(creds))
+    creds = creds[first]
+
     org = GIS(url='https://phl.maps.arcgis.com',
                 username=creds['login'],
                 password=creds['password'],
@@ -121,6 +125,32 @@ def process_row(row, field_map):
         out_row['description'] = out_row['description'][:250]
     except:
         pass
+
+    # Clean police_district
+    try:
+        match = re.findall(r'\d+', out_row['police_district'])
+        out_row['police_district'] = int(match[0]) if match else None
+    except:
+        out_row['police_district'] = None
+
+    # Clean council_district_num
+    try:
+        match = re.findall(r'\d+', out_row['council_district_num'])
+        out_row['council_district_num'] = int(match[0]) if match else None
+    except:
+        out_row['council_district_num'] = None
+
+    # Lowercase pinpoint_area
+    try:
+        out_row['pinpoint_area'] = out_row['pinpoint_area'].lower().strip()
+    except:
+        out_row['pinpoint_area'] = None
+
+    # int parent_service_request_id (SAG_Parent_Case_Number__c)
+    try:
+        out_row['parent_service_request_id'] = int(out_row['parent_service_request_id']) if out_row['parent_service_request_id'] != 0 and out_row['parent_service_request_id'] != '0' else None
+    except:
+        out_row['parent_service_request_id'] = None
 
     # Map private flag
     private = out_row['private_case']

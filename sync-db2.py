@@ -222,26 +222,29 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
     #print('Reading from temp csv')
     rows = etl.fromcsv(temp_csv)
     etl.look(rows)
-    print(temp_csv)
 
-    # upload to S3 so dbtools can use it
-    s3 = citygeo_secrets.connect_with_secrets(connect_aws_s3, 'Citygeo AWS Key Pair PROD')
-    s3.upload_file(Filename=temp_csv,
-                   Bucket='citygeo-airflow-databridge2',
-                   Key='staging/philly311/salesforce_cases_raw_temp.csv')
+    if not rows:
+        print('No rows found!')
+        sys.exit(1)
+    else:
+        # upload to S3 so dbtools can use it
+        s3 = citygeo_secrets.connect_with_secrets(connect_aws_s3, 'Citygeo AWS Key Pair PROD')
+        s3.upload_file(Filename=temp_csv,
+                    Bucket='citygeo-airflow-databridge2',
+                    Key='staging/philly311/salesforce_cases_raw_temp.csv')
 
-    # Load via databridge-et-tools
-    connector = citygeo_secrets.connect_with_secrets(create_dbtools_connector, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
-    with Postgres(
-        connector=connector,
-        table_name='salesforce_cases_raw',
-        table_schema='philly311',
-        s3_bucket='citygeo-airflow-databridge2',
-        s3_key='staging/philly311/salesforce_cases_raw_temp.csv', 
-        with_srid=True) as postgres: 
-        postgres.load()
-    
-    print(f'Success.')
+        # Load via databridge-et-tools
+        connector = citygeo_secrets.connect_with_secrets(create_dbtools_connector, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
+        with Postgres(
+            connector=connector,
+            table_name='salesforce_cases_raw',
+            table_schema='philly311',
+            s3_bucket='citygeo-airflow-databridge2',
+            s3_key='staging/philly311/salesforce_cases_raw_temp.csv', 
+            with_srid=True) as postgres: 
+            postgres.upsert('csv')
+        
+        print(f'Success.')
 
 
 if __name__ == '__main__':

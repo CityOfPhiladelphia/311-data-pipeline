@@ -7,7 +7,7 @@ AGO_SRID = 4326
 
 PRIMARY_KEY = 'service_request_id'
 
-SALESFORCE_AGO_ITEMID_PROD = ''
+SALESFORCE_AGO_ITEMID_PROD = '3fca8f1d9a9d475a942e47fb34a85e93'
 SALESFORCE_AGO_ITEMID_TEST = '3fca8f1d9a9d475a942e47fb34a85e93'
 
 # These describe the destination (enterprise) dataset.
@@ -78,7 +78,7 @@ FIELD_MAP = {
     'police_district':          'Police_District__c',
     'council_district_num':     'Council_District_No__c',
     'pinpoint_area':            'Pinpoint_Area__c',
-    'parent_id':                'SAG_Parent_Case_Number__c'
+    'parent_service_request_id':  'SAG_Parent_Case_Number__c'
     # 'description_full':         'Description',
 }
 

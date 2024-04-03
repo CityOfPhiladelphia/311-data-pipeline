@@ -10,7 +10,7 @@ import petl as etl
 import pyproj
 import shapely.wkt
 from shapely.ops import transform as shapely_transformer
-import citygeo_secrets
+import citygeo_secrets as cgs
 from config import *
 from common import *
 import click
@@ -23,6 +23,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # import after so we don't get userwarnings
 from arcgis import GIS
 from arcgis.features import FeatureLayerCollection
+
+
+AGO_USER = 'AGO/maps.phl.backup'
 
 
 @click.command()
@@ -39,7 +42,7 @@ def sync(day, prod):
 
     
     print('Connecting to AGO...')
-    org = citygeo_secrets.connect_with_secrets(connect_ago_arcgis, 'maps.phl.data')
+    org = cgs.connect_with_secrets(connect_ago_arcgis, AGO_USER)
     print('Connected to AGO.\n')
 
     if prod:
@@ -47,9 +50,9 @@ def sync(day, prod):
     else:
         SALESFORCE_AGO_ITEMID = SALESFORCE_AGO_ITEMID_TEST
 
+    print(SALESFORCE_AGO_ITEMID)
     flayer = org.content.get(SALESFORCE_AGO_ITEMID)
     LAYER_OBJECT = flayer.layers[0]
-    print(LAYER_OBJECT)
 
     GEOMETRIC = LAYER_OBJECT.properties.geometryType
 
@@ -62,7 +65,6 @@ def sync(day, prod):
     conn = citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
     cursor = conn.cursor()
 
-    print("Connected to Databridge!\n")
 
     def project_and_format_shape(wkt_shape):
         ''' Helper function to help format spatial fields properly for AGO '''
@@ -96,6 +98,8 @@ def sync(day, prod):
             if IN_SRID != AGO_SRID:
                 x, y = TRANSFORMER.transform(pt.x, pt.y)
                 return x, y
+            elif 'MULTIPOINT EMPTY' in wkt_shape:
+                return None, None
             else:
                 return pt.x, pt.y
         elif 'MULTIPOLYGON' in wkt_shape:
@@ -197,7 +201,7 @@ def sync(day, prod):
         # https://developers.arcgis.com/documentation/common-data-types/geometry-objects.htm
         if 'POINT' in wkt:
             projected_x, projected_y = project_and_format_shape(wkt)
-                           # Format our row, following the docs on this one, see section "In [18]":
+            # Format our row, following the docs on this one, see section "In [18]":
             # https://developers.arcgis.com/python/sample-notebooks/updating-features-in-a-feature-layer/
             # create our formatted point geometry
             geom_dict = {"x": projected_x,
@@ -422,7 +426,7 @@ def sync(day, prod):
     expected_headers = ['closed_datetime','objectid','service_request_id','status','status_notes','service_name',
                         'service_code','description','agency_responsible','service_notice','requested_datetime',
                         'updated_datetime','expected_datetime','closed_datetime','address','zipcode','media_url','private_case',
-                        'description_full','subject','type_','police_district','council_district_num','pinpoint_area','parent_id','shape','gdb_geomattr_data']
+                        'description_full','subject','type_','police_district','council_district_num','pinpoint_area','parent_service_request_id','shape','gdb_geomattr_data']
 
     headers_stmt = f'''
         SELECT column_name
@@ -432,6 +436,7 @@ def sync(day, prod):
     '''
     cursor.execute(headers_stmt)
     headers = cursor.fetchall()
+    assert headers, f'Didnt get any headers from header stmt?? stmt ran: {headers_stmt}'
 
     headers_list = []
     for i in headers:
@@ -442,6 +447,7 @@ def sync(day, prod):
     # We don't want this in our SELECT statements, we'll instead grab them later like this:
     # sde.st_astext(SHAPE) as SHAPE
     # AGO also doesn't return shape as a field so we need this out for a field comparison.
+    
     headers_list.remove('shape')
     #gdb_geomattr_data is always added in postgres datasets. Ignore.
     headers_list.remove('gdb_geomattr_data')
@@ -519,8 +525,8 @@ def sync(day, prod):
         databridge_stmt=f'''
         SELECT {PRIMARY_KEY},updated_datetime
             FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
-            WHERE updated_datetime >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS TZH:TZM')\
-            AND updated_datetime < to_date('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS TZH:TZM')\
+            WHERE updated_datetime >= to_timestamp('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            AND updated_datetime < to_timestamp('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
             ORDER BY updated_datetime ASC
         '''
     # Else grab recrods from the max updated_datetime we have in AGO and forward
@@ -528,15 +534,18 @@ def sync(day, prod):
         databridge_stmt=f'''
         SELECT {PRIMARY_KEY},updated_datetime
             FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
-            WHERE updated_datetime >= to_date('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
+            WHERE updated_datetime >= to_timestamp('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS TZHTZM')\
             ORDER BY updated_datetime ASC
         '''
 
-    cursor_dict = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    #cursor_dict = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     print(f'Grabbing all {PRIMARY_KEY}s with same date or greater with query: {databridge_stmt}')
-    cursor_dict.execute(databridge_stmt)
-    databridge_matches = cursor_dict.fetchall()
+
+    with conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as curs:
+            curs.execute(databridge_stmt)
+            databridge_matches = curs.fetchall()
 
     if len(databridge_matches) == 0:
         print('Nothing to update!')
@@ -564,8 +573,10 @@ def sync(day, prod):
                 FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
                 WHERE {PRIMARY_KEY} = {working_primary_key}
         '''
-        cursor_dict.execute(databridge_stmt)
-        new_row = cursor_dict.fetchall()
+        with conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as curs:
+                curs.execute(databridge_stmt)
+                new_row = curs.fetchall()
         if len(new_row) > 1:
             print(new_row)
             raise AssertionError(f'Should have only gotten 1 row back, instead got this many: {len(new_row)}, {PRIMARY_KEY}: {row[PRIMARY_KEY]}')
@@ -573,8 +584,10 @@ def sync(day, prod):
             # Retry once more against databridge if we encounter this
             # I don't know why oracle is doing this occasionally, the queries always work when I run them manually
             sleep(10)
-            cursor_dict.execute(databridge_stmt)
-            new_row = cursor_dict.fetchall()
+            with conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as curs:
+                    curs.execute(databridge_stmt)
+                    new_row = curs.fetchall()
             if len(new_row) == 0:
                 raise AssertionError(f'Got nothing back from Databridge with query: {databridge_stmt}')
             if len(new_row) > 1:
