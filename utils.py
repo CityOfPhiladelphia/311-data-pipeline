@@ -6,7 +6,7 @@ from arcgis import GIS
 # Secret for sync-ago.py
 def get_salesforce_ago_layer(creds:dict): 
     salesforce_creds = creds['salesforce API copy']
-    ago_creds =  creds["maps.phl.data"]
+    ago_creds =  creds["AGO/maps.phl.backup"]
     org = GIS(url=ago_creds.get('url'),
                 username=ago_creds.get('login'),
                 password=ago_creds.get('password'),

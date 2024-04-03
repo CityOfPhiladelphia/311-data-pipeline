@@ -9,11 +9,18 @@ from time import sleep
 import petl as etl
 import pyproj
 import shapely.wkt
-import citygeo_secrets
+import citygeo_secrets as cgs
 from shapely.ops import transform as shapely_transformer
 from config import *
 import click
 from utils import *
+
+cgs.set_config(
+    log_level='info',
+    keeper_dir='/scripts/',
+    verify_ssl_certs = False)
+
+AGO_USER = 'AGO/maps.phl.backup'
 
 
 @click.command()
@@ -31,7 +38,7 @@ def sync(day):
                                                f'epsg:{AGO_SRID}',
                                                always_xy=True)
 
-    flayer = citygeo_secrets.connect_with_secrets(get_salesforce_ago_layer, "salesforce API copy", "maps.phl.data" )
+    flayer = cgs.connect_with_secrets(get_salesforce_ago_layer, "salesforce API copy", AGO_USER )
     LAYER_OBJECT = flayer.layers[0]
     print(LAYER_OBJECT)
 
