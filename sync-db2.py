@@ -74,34 +74,28 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
 
         print(f'year_refresh on {year_refresh}')
 
-        # Loop through the months
-        for i in range(1,13):
-            print(f'\nFetching all by last modification for month {year_refresh}-{i}')
-            start_date = f'{year_refresh}-{i}-01 00:00:00 +0000'
-            start_date_dt = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S %z')
-            start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
+        print(f'\nFetching all by last modification for year: {year_refresh}')
+        start_date = f'{year_refresh}-01-01 00:00:00 +0000'
+        start_date_dt = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S %z')
+        start_date_utc = convert_to_dttz(start_date_dt, utc_tz)
 
-            print(f'Using start date: {start_date}')
+        end_date = f'{int(year_refresh)+1}-01-01 00:00:00 +0000'
+        end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
+        end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
 
-            # less than but not equal to the next month or year so we easily capture everything
-            # without nonsense about month days and leap years.
-            if i == 12:
-                end_date = f'{int(year_refresh)+1}-01-01 00:00:00 +0000'
-                end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
-                end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
-            else:
-                end_date = f'{year_refresh}-{i+1}-01 00:00:00 +0000'
-                end_date_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S %z')
-                end_date_utc = convert_to_dttz(end_date_dt, utc_tz)
+        print(f'Using start date: {start_date}')
+        print(f'End date: {end_date}')
 
-            sf_query = SF_QUERY + f' AND ({date_column} >= {start_date_utc.isoformat()})'
-            sf_query += f' AND ({date_column} < {end_date_utc.isoformat()})'
-            #remove all newlines and extra whitespace in case its messing with HTML encoding
-            sf_query = ' '.join(sf_query.split())
-            print(sf_query)
-            sf_rows = sf.query_all_iter(sf_query)
+        sf_query = SF_QUERY + f' AND ({date_column} >= {start_date_utc.isoformat()})'
+        sf_query += f' AND ({date_column} < {end_date_utc.isoformat()})'
+        #remove all newlines and extra whitespace in case its messing with HTML encoding
+        sf_query = ' '.join(sf_query.split())
+        print(sf_query)
+        sf_rows = sf.query_all_iter(sf_query)
 
-            print('Got rows.')
+        # Note: cannot find a way to get length of sf_rows without running through it
+        # as it is a generator, not a list or dict.
+        print('Got rows')
 
     # If a month_refresh was passed in, refresh for an entire month
     elif month_refresh:
@@ -109,7 +103,7 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
         if not (int(adate.year) >= 2000) and (int(adate.year) <= 2099):
             raise Exception('Please provide a realistic year!')
         if not (int(adate.month) >= 1) and (int(adate.year) <= 12):
-            raise Exception('Please provide a realistic month!')
+            raise Exception('Please provide a real month number!')
 
         print(f'\nFetching all by last modification for month {month_refresh}')
         start_date = f'{month_refresh}-01 00:00:00 +0000'
@@ -134,7 +128,9 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
         print(sf_query)
         sf_rows = sf.query_all_iter(sf_query)
 
-        print('Got rows.')
+        # Note: cannot find a way to get length of sf_rows without running through it
+        # as it is a generator, not a list or dict.
+        print(f'Got rows.')
 
     # If a day was passed in, refresh for the entire day.
     elif day_refresh:
@@ -157,6 +153,8 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
 
         sf_rows = sf.query_all_iter(sf_query)
 
+        # Note: cannot find a way to get length of sf_rows without running through it
+        # as it is a generator, not a list or dict.
         print('Got rows.')
 
     # Otherwise, grab rows by the last updated date from the DB.
@@ -181,6 +179,8 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
             #print("Salesforce Query: ", sf_query)
             sf_rows = sf.query_all_iter(sf_query)
             #sf_debug_rows = sf.query_all_iter(sf_debug_query)
+            # Note: cannot find a way to get length of sf_rows without running through it
+            # as it is a generator, not a list or dict.
             print('Got rows.')
         except Exception as e:
             message = "Error: {}".format(str(e))
@@ -231,7 +231,7 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
         s3 = citygeo_secrets.connect_with_secrets(connect_aws_s3, 'Citygeo AWS Key Pair PROD')
         s3.upload_file(Filename=temp_csv,
                     Bucket='citygeo-airflow-databridge2',
-                    Key='staging/philly311/salesforce_cases_raw_temp.csv')
+                    Key='staging/philly311/salesforce_cases_raw_pipeline_temp.csv')
 
         # Load via databridge-et-tools
         connector = citygeo_secrets.connect_with_secrets(create_dbtools_connector, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
@@ -240,11 +240,17 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
             table_name='salesforce_cases_raw',
             table_schema='philly311',
             s3_bucket='citygeo-airflow-databridge2',
-            s3_key='staging/philly311/salesforce_cases_raw_temp.csv', 
+            s3_key='staging/philly311/salesforce_cases_raw_pipeline_temp.csv', 
             with_srid=True) as postgres: 
             postgres.upsert('csv')
         
         print(f'Success.')
+
+    try:
+        print(f'Attempting to remove {temp_csv}')
+        os.remove(temp_csv)
+    except:
+        pass
 
 
 if __name__ == '__main__':
