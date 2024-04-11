@@ -112,7 +112,7 @@ def process_row(row, field_map):
         x = float(row['Centerline__Longitude__s'])
         y = float(row['Centerline__Latitude__s'])
         if 0 not in [x, y]:
-            shape = 'SRID=2272;POINT ({} {})'.format(x, y) if x else 'POINT EMPTY'
+            shape = 'SRID=4326;POINT ({} {})'.format(x, y) if x else 'POINT EMPTY'
     except (ValueError, TypeError):
         pass
     finally:
