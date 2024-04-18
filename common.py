@@ -5,6 +5,7 @@ from config import *
 from databridge_etl_tools.postgres.postgres import Postgres, Postgres_Connector
 from arcgis import GIS
 import re
+import unicodedata
 
 # Setup global database vars/objects to be used between our two functions below.
 def connect_databridge(creds: dict, prod):
@@ -119,9 +120,12 @@ def process_row(row, field_map):
         out_row['shape'] = shape
 
     # Truncate description and description_full
+    # also remove bad characters before making description_full
+    # If we don't remove odd characters like emojis I believe they get expanded into more characters.
     try:
+        out_row['description'] = out_row['description'].strip('<>\'')
+        out_row['description'] = unicodedata.normalize("NFKD", out_row['description']).encode("ascii", "ignore").decode() 
         out_row['description_full'] = out_row['description'][:2000]
-        #out_row['description_full'] = None
         out_row['description'] = out_row['description'][:250]
     except:
         pass
@@ -132,6 +136,11 @@ def process_row(row, field_map):
         out_row['police_district'] = int(match[0]) if match else None
     except:
         out_row['police_district'] = None
+    # Discard values greater than 100, bad input.
+    if out_row['police_district']:
+        if int(out_row['police_district']) > 100:
+            print(f"Bad police_district input, discarding: {out_row['police_district']}")
+            out_row['police_district'] = None
 
     # Clean council_district_num
     try:
@@ -139,6 +148,11 @@ def process_row(row, field_map):
         out_row['council_district_num'] = int(match[0]) if match else None
     except:
         out_row['council_district_num'] = None
+    # Discard values greater than 100, bad input.
+    if out_row['council_district_num']:
+        if int(out_row['council_district_num']) > 100:
+            print(f"Bad council_district_num input, discarding: {out_row['police_district']}")
+            out_row['council_district_num'] = None
 
     # Lowercase pinpoint_area
     try:
@@ -180,6 +194,14 @@ def process_row(row, field_map):
             status_notes = row['Close_Reason__c']
         else:
             status_notes = row['Status_Update__c']
+
+    # Clean status_notes as it can take arbitrary user input.
+    if isinstance(status_notes, str):
+        status_notes = status_notes.strip('<>\'')
+        status_notes = unicodedata.normalize("NFKD", status_notes).encode("ascii", "ignore").decode() 
+        if len(status_notes) > 2000:
+            status_notes = status_notes[:2000]
+
     out_row['status_notes'] = status_notes
 
     # TEMP: check for excessively long strings until this is

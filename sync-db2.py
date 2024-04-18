@@ -210,13 +210,6 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
     print(f'Writing to temp csv "{temp_csv}"...')
     rows = etl.fromdicts(rows)
 
-    print('Removing bad characters..')
-    # Remove caret and single quote characters, they are bad for AGO.
-    rows.convert('description', lambda a, row: a.replace(row.description, row.description.strip('<>\'')))
-    rows.convert('status_notes', lambda a, row: a.replace(row.status_notes, row.status_notes.strip('<>\'')))
-    # Encode in ASCII to get rid of bad special characters
-    rows.convert('description', lambda u, row: u.replace(row.description, row.description.encode("ascii", "ignore".decode())))
-    rows.convert('status_notes', lambda u, row: u.replace(row.status_notes, row.status_notes.encode("ascii", "ignore".decode())))
     rows.tocsv(temp_csv)
 
     #print('Reading from temp csv')
