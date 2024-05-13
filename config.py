@@ -78,8 +78,12 @@ FIELD_MAP = {
     'police_district':          'Police_District__c',
     'council_district_num':     'Council_District_No__c',
     'pinpoint_area':            'Pinpoint_Area__c',
-    'parent_service_request_id':  'SAG_Parent_Case_Number__c'
-    # 'description_full':         'Description',
+    'parent_service_request_id':'SAG_Parent_Case_Number__c',
+    'li_district':              'L_I_District__c',
+    'sanitation_district':      'Sanitation_District__c',
+    'service_request_origin':   'Origin',
+    'service_type':             'Service_Request_Type__c',
+    'record_id':                'Id'
 }
 
 # Most of the filtering for the public view we do in the database, but the
@@ -115,7 +119,12 @@ SF_QUERY            = '''
                             Police_District__c,
                             Council_District_No__c,
                             Pinpoint_Area__c,
-                            SAG_Parent_Case_Number__c
+                            SAG_Parent_Case_Number__c,
+                            L_I_District__c,
+                            Sanitation_District__c,
+                            Origin,
+                            Service_Request_Type__c,
+                            Id
                         FROM Case
                         WHERE {}
                     '''.format(SF_WHERE)
@@ -123,3 +132,4 @@ SF_COUNT_QUERY      = '''
                         SELECT COUNT() FROM Case
                         WHERE {}
                     '''.format(SF_WHERE)
+

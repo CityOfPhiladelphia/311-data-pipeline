@@ -426,7 +426,8 @@ def sync(day, prod):
     expected_headers = ['closed_datetime','objectid','service_request_id','status','status_notes','service_name',
                         'service_code','description','agency_responsible','service_notice','requested_datetime',
                         'updated_datetime','expected_datetime','closed_datetime','address','zipcode','media_url','private_case',
-                        'description_full','subject','type_','police_district','council_district_num','pinpoint_area','parent_service_request_id','shape','gdb_geomattr_data']
+                        'description_full','subject','type_','police_district','council_district_num','pinpoint_area','parent_service_request_id',
+                        'li_district', 'sanitation_district', 'service_request_origin', 'service_type', 'record_id', 'shape','gdb_geomattr_data']
 
     headers_stmt = f'''
         SELECT column_name
