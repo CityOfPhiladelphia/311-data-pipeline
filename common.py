@@ -105,7 +105,6 @@ def process_row(row, field_map):
     This processes a Salesforce row. Can be either from an API call or dump
     file.
     """
-    global LI_STREETS_WATER
     out_row = {field: row[src_field] for field, src_field in field_map.items()}
     # Make geom
     shape = None
@@ -187,13 +186,10 @@ def process_row(row, field_map):
             out_row[field] = None
 
     # Pick source field for status notes
-    if out_row['agency_responsible'] in LI_STREETS_WATER:
-        status_notes = row['Resolution__c']
+    if out_row['status'] == 'Closed':
+        status_notes = row['Close_Reason__c']
     else:
-        if out_row['status'] == 'Closed':
-            status_notes = row['Close_Reason__c']
-        else:
-            status_notes = row['Status_Update__c']
+        status_notes = row['Status_Update__c']
 
     # Clean status_notes as it can take arbitrary user input.
     if isinstance(status_notes, str):

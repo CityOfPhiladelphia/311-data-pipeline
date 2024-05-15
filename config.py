@@ -17,6 +17,7 @@ DEST_UPDATED_FIELD      = 'updated_datetime'
 TEMP_TABLE              = 'salesforce_cases_raw_temp'
 
 # These agencies use different field for their status notes.
+# Update 5/15/2024 this is no longer the case? unused
 LI_STREETS_WATER = [
     'License & Inspections',
     'Licenses & Inspections',
@@ -108,7 +109,6 @@ SF_QUERY            = '''
                             Private_Case__c,
                             SLA__c,
                             Service_Code__c,
-                            Resolution__c,
                             ZipCode__c,
                             Media_Url__c,
                             Sla_date__c,
