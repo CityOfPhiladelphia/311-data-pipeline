@@ -427,7 +427,8 @@ def sync(day, prod):
                         'service_code','description','agency_responsible','service_notice','requested_datetime',
                         'updated_datetime','expected_datetime','closed_datetime','address','zipcode','media_url','private_case',
                         'description_full','subject','type_','police_district','council_district_num','pinpoint_area','parent_service_request_id',
-                        'li_district', 'sanitation_district', 'service_request_origin', 'service_type', 'record_id', 'shape','gdb_geomattr_data']
+                        'li_district', 'sanitation_district', 'service_request_origin', 'service_type', 'record_id', 'shape','gdb_geomattr_data',
+                        'vehicle_model', 'vehicle_make', 'vehicle_color', 'vehicle_body_style', 'vehicle_license_plate', 'vehicle_license_plate_state']
 
     headers_stmt = f'''
         SELECT column_name
