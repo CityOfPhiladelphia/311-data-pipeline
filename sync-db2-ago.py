@@ -31,7 +31,8 @@ AGO_USER = 'AGO/maps.phl.backup'
 @click.command()
 @click.option('--prod', is_flag=True)
 @click.option('--day', '-d', help='Retrieve and update records that were updated on a specific day (e.g. 2016-05-18). This is mostly for debugging and maintenance purposes.')
-def sync(day, prod):
+@click.option('--batch-amount', required=False, default=50)
+def sync(day, prod, batch_amount):
     # They're the same for saleforce so we should need no projecting of points.
     # Hardcode this to make the code work, but we can modularize this lter.
 
@@ -270,7 +271,17 @@ def sync(day, prod):
                     if "error" in element and element["error"]["code"] == 1003:
                         return True
                     elif "error" in element and element["error"]["code"] != 1003:
-                        raise Exception(f'Got this error returned from AGO (unhandled error): {element["error"]}')
+                        if 'String or binary data would be truncated' in element["error"]:
+                            error_msg =  f'Got this error returned from AGO (unhandled error): {element["error"]}, this probably means one of your text fields in AGO is receiving a value that is too long?'
+                        else:
+                            error_msg =  f'Got this error returned from AGO (unhandled error): {element["error"]}'
+                        raise Exception(error_msg)
+                    # Special error returned in objectid -1 for some reason?
+                    if element['objectId'] == -1:
+                        if "error" in element:
+                            print(element['objectId']['error']['description'])
+                        else:
+                            print(element)
                 return False
 
         success = False
@@ -285,8 +296,8 @@ def sync(day, prod):
                 # break
             # Is it still rolled back after a retry?
             if result is not None:
-                if is_rolled_back(result):
-                    raise Exception("Retry on rollback didn't work.")
+                raise Exception("Retry on rollback didn't work. Raw error from ESRI:")
+                print(results)
 
             # Add the batch
             try:
@@ -609,11 +620,16 @@ def sync(day, prod):
         # Reference: https://developers.arcgis.com/python/guide/editing-features/
         row_to_append = format_row(new_row)
 
-        # A true AGO upsert requries some more complex comparing between the rows we have
+        # A true AGO upsert requries some more complex comparing between the rows we have with
         # what's in AGO, and also matching up the objectid. We can avoid that by simply
         # deleting the row, which we'll then add again ourselves.
         if not ago_row.sdf.empty:
-            delsquery = delsquery + f' {PRIMARY_KEY} = {working_primary_key} OR'
+            # if this is our first delete, don't add an OR
+            if not delsquery:
+                delsquery = delsquery + f' {PRIMARY_KEY} = {working_primary_key}'
+            # else start tacking OR's onto it
+            else:
+                delsquery = delsquery + f'OR {PRIMARY_KEY} = {working_primary_key}'
 
         #if ago_row.sdf.empty:
             #print(f'New row: {PRIMARY_KEY}: {working_primary_key}')
@@ -625,7 +641,14 @@ def sync(day, prod):
         # A bit messy but it should (probably) save some strain on ESRI's infra and go faster
         # then one at a time.
         # AGO will also fail hard if our delsquery of multiple OR statements gets too long.
-        if len(adds) >= 50 or delsquery.count(PRIMARY_KEY) >= 25:
+        #
+        # Defaults to 50 for the appends and 26 for the deletes due to the default value for "--batch-option" in the click option.
+        dels_amount = int(batch_amount/2) + 1
+        if len(adds) >= batch_amount or delsquery.count(PRIMARY_KEY) >= dels_amount:
+            # If someone passed in a batch amount less than 5, then they're trying to debug.
+            if batch_amount <= 5:
+                print('adds:', adds)
+                print('deletes:', delsquery)
             print('\nApplying batch dels and adds to AGO..')
             if delsquery:
                 # This is messy but slice it to remove trailing ' OR' otherwise the query is invalid
