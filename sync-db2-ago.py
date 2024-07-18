@@ -133,7 +133,18 @@ def sync(day, prod, batch_amount):
 
 
     def format_row(row):
-        clean_columns = ['description', 'description_full', 'status_notes', 'subject']
+        # Ugh, adding in all the new vehicle columns in to be cleaned
+        # since 311 people are inserting arbitrary text into them.
+        clean_columns = ['description',
+                         'description_full',
+                         'status_notes',
+                         'subject',
+                         'vehicle_make',
+                         'vehicle_model',
+                         'vehicle_color',
+                         'vehicle_body_style',
+                         'vehicle_license_plate',
+                         'vehicle_license_plate_state']
         # Clean our designated row of non-utf-8 characters or other undesirables that makes AGO mad.
         # If you pass multiple values separated by a comma, it will perform on multiple colmns
         for column in clean_columns:
@@ -296,8 +307,7 @@ def sync(day, prod, batch_amount):
                 # break
             # Is it still rolled back after a retry?
             if result is not None:
-                raise Exception("Retry on rollback didn't work. Raw error from ESRI:")
-                print(results)
+                raise Exception(f"Retry on rollback didn't work. Raw error from ESRI: {result}")
 
             # Add the batch
             try:
@@ -665,6 +675,7 @@ def sync(day, prod, batch_amount):
                 print(f'Added {len(adds)} rows.')
             adds = []
             delsquery = ''
+            print('Done batch add.')
 
     # Apply last leftover batch
     print('\nApplying last leftover batch dels and adds to AGO..')

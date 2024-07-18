@@ -129,6 +129,12 @@ def process_row(row, field_map):
     except:
         pass
 
+    # Truncate this dumb field because people put whatever in here:
+    try:
+        out_row['vehicle_license_plate_state'] = out_row['vehicle_license_plate_state'][:30]
+    except:
+        pass
+
     # Clean police_district
     try:
         match = re.findall(r'\d+', out_row['police_district'])
