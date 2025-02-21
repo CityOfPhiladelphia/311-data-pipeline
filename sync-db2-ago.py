@@ -138,13 +138,7 @@ def sync(day, prod, batch_amount):
         clean_columns = ['description',
                          'description_full',
                          'status_notes',
-                         'subject',
-                         'vehicle_make',
-                         'vehicle_model',
-                         'vehicle_color',
-                         'vehicle_body_style',
-                         'vehicle_license_plate',
-                         'vehicle_license_plate_state']
+                         'subject']
         # Clean our designated row of non-utf-8 characters or other undesirables that makes AGO mad.
         # If you pass multiple values separated by a comma, it will perform on multiple colmns
         for column in clean_columns:
@@ -444,18 +438,16 @@ def sync(day, prod, batch_amount):
 
 
     # First let's do a pre-check and assert column headers are what we expect.
-    expected_headers = ['closed_datetime','objectid','service_request_id','status','status_notes','service_name',
-                        'service_code','description','agency_responsible','service_notice','requested_datetime',
-                        'updated_datetime','expected_datetime','closed_datetime','address','zipcode','media_url','private_case',
-                        'description_full','subject','type_','police_district','council_district_num','pinpoint_area','parent_service_request_id',
-                        'li_district', 'sanitation_district', 'service_request_origin', 'service_type', 'record_id', 'shape','gdb_geomattr_data',
-                        'vehicle_model', 'vehicle_make', 'vehicle_color', 'vehicle_body_style', 'vehicle_license_plate', 'vehicle_license_plate_state']
+    expected_headers = ['objectid','service_request_id','gdb_geomattr_data','status','shape','status_notes',
+                        'service_name','service_code','agency_responsible','service_notice','requested_datetime',
+                        'updated_datetime','expected_datetime','closed_datetime','address','zipcode','media_url',
+                        'lat','lon','subject','type_','description','description_full','private_case']
 
     headers_stmt = f'''
         SELECT column_name
         FROM information_schema.columns
         WHERE table_schema = '{DEST_DB_ACCOUNT}'
-        AND table_name   = '{DEST_TABLE}';
+        AND table_name   = '{ENTERPRISE_TABLE}';
     '''
     cursor.execute(headers_stmt)
     headers = cursor.fetchall()
@@ -473,7 +465,7 @@ def sync(day, prod, batch_amount):
     
     headers_list.remove('shape')
     #gdb_geomattr_data is always added in postgres datasets. Ignore.
-    headers_list.remove('gdb_geomattr_data')
+    #headers_list.remove('gdb_geomattr_data')
 
     # Original list without our 'to_char' conversions so we can do an accurate field comparison to AGO
     # Copy the list so it's not just a memory reference
@@ -502,9 +494,12 @@ def sync(day, prod, batch_amount):
     if 'objectid' in ago_fields:
         ago_fields.remove('objectid')
 
+
     print(f'Comparing AGO fields: "{ago_fields}" and databridge fields: "{db_fields}"')
     diff = set(ago_fields) - set(db_fields)
-    assert db_fields == ago_fields, f'field differences found: {diff}'
+    if not diff:
+        diff = set(db_fields) - set(ago_fields)
+    assert set(db_fields) == set(ago_fields), f'field differences found: {diff}'
 
     ###############################
     # 1. Grab the max date in AGO
@@ -547,7 +542,7 @@ def sync(day, prod, batch_amount):
     if day:
         databridge_stmt=f'''
         SELECT {PRIMARY_KEY},updated_datetime
-            FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
+            FROM {DEST_DB_ACCOUNT}.{ENTERPRISE_TABLE}
             WHERE updated_datetime >= to_timestamp('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
             AND updated_datetime < to_timestamp('{end_dt_str}', 'YYYY-MM-DD HH24:MI:SS')\
             ORDER BY updated_datetime ASC
@@ -556,7 +551,7 @@ def sync(day, prod, batch_amount):
     else:
         databridge_stmt=f'''
         SELECT {PRIMARY_KEY},updated_datetime
-            FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
+            FROM {DEST_DB_ACCOUNT}.{ENTERPRISE_TABLE}
             WHERE updated_datetime >= to_timestamp('{max_ago_dt_str}', 'YYYY-MM-DD HH24:MI:SS TZHTZM')\
             ORDER BY updated_datetime ASC
         '''
@@ -593,7 +588,7 @@ def sync(day, prod, batch_amount):
         # Grab the full row from databridge
         databridge_stmt = f'''
             SELECT {headers_str}
-                FROM {DEST_DB_ACCOUNT}.{DEST_TABLE}
+                FROM {DEST_DB_ACCOUNT}.{ENTERPRISE_TABLE}
                 WHERE {PRIMARY_KEY} = {working_primary_key}
         '''
         with conn:
@@ -606,6 +601,7 @@ def sync(day, prod, batch_amount):
         if len(new_row) == 0:
             # Retry once more against databridge if we encounter this
             # I don't know why oracle is doing this occasionally, the queries always work when I run them manually
+            print('Retrying??')
             sleep(10)
             with conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as curs:

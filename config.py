@@ -7,12 +7,15 @@ AGO_SRID = 4326
 
 PRIMARY_KEY = 'service_request_id'
 
-SALESFORCE_AGO_ITEMID_PROD = '3fca8f1d9a9d475a942e47fb34a85e93'
-SALESFORCE_AGO_ITEMID_TEST = '3fca8f1d9a9d475a942e47fb34a85e93'
+SALESFORCE_AGO_ITEMID_PROD = 'bfb60a6e198b401ba6e066126e17e831'
+SALESFORCE_AGO_ITEMID_TEST = 'bfb60a6e198b401ba6e066126e17e831'
 
 # These describe the destination (enterprise) dataset.
 DEST_DB_ACCOUNT         = 'citygeo'
 DEST_TABLE              = 'salesforce_cases_raw'
+
+ENTERPRISE_TABLE        = 'salesforce_cases'
+
 DEST_UPDATED_FIELD      = 'updated_datetime'
 TEMP_TABLE              = 'salesforce_cases_raw_temp'
 
