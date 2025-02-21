@@ -63,7 +63,7 @@ def sync(day, prod, batch_amount):
     else:
         raise AssertionError('Item is not geometric.\n')
 
-    conn = citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
+    conn = citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/citygeo', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
     cursor = conn.cursor()
 
 

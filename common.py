@@ -9,7 +9,7 @@ import unicodedata
 
 # Setup global database vars/objects to be used between our two functions below.
 def connect_databridge(creds: dict, prod):
-    db2_creds = creds['databridge-v2/philly311']
+    db2_creds = creds['databridge-v2/citygeo']
     if prod:
         print('Connecting to PROD databridge database!')
         host = creds['databridge-v2/hostname']['host']
@@ -23,7 +23,7 @@ def connect_databridge(creds: dict, prod):
 def create_dbtools_connector(creds: dict, prod):
     # Makes a connector object with databridge_etl_tools.postgres.postgres.Postgres_Connector
     # for use with the databridge_etl_tools load function
-    db2_creds = creds['databridge-v2/philly311']
+    db2_creds = creds['databridge-v2/citygeo']
     if prod:
         print('Connecting to PROD databridge database!')
         host = creds['databridge-v2/hostname']['host']

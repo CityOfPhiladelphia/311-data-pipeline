@@ -11,7 +11,7 @@ SALESFORCE_AGO_ITEMID_PROD = '3fca8f1d9a9d475a942e47fb34a85e93'
 SALESFORCE_AGO_ITEMID_TEST = '3fca8f1d9a9d475a942e47fb34a85e93'
 
 # These describe the destination (enterprise) dataset.
-DEST_DB_ACCOUNT         = 'philly311'
+DEST_DB_ACCOUNT         = 'citygeo'
 DEST_TABLE              = 'salesforce_cases_raw'
 DEST_UPDATED_FIELD      = 'updated_datetime'
 TEMP_TABLE              = 'salesforce_cases_raw_temp'

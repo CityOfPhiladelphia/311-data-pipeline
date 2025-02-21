@@ -27,7 +27,7 @@ from databridge_etl_tools.postgres.postgres import Postgres, Postgres_Connector
 
 
 def connect_to_databridge(prod):
-    return citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
+    return citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/citygeo', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
 
 def connect_to_salesforce():
     salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "salesforce API copy")
@@ -71,13 +71,13 @@ def upload_to_s3(temp_csv, bucket, key):
     s3.upload_file(Filename=temp_csv, Bucket=bucket, Key=key)
 
 def upsert_to_postgres(temp_csv, table_schema, table_name, prod):
-    connector = citygeo_secrets.connect_with_secrets(create_dbtools_connector, 'databridge-v2/philly311', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
+    connector = citygeo_secrets.connect_with_secrets(create_dbtools_connector, 'databridge-v2/citygeo', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
     with Postgres(
         connector=connector,
         table_name=table_name,
         table_schema=table_schema,
         s3_bucket='citygeo-airflow-databridge2',
-        s3_key='staging/philly311/salesforce_cases_raw_pipeline_temp.csv',
+        s3_key='staging/citygeo/salesforce_cases_raw_pipeline_temp.csv',
         with_srid=True
     ) as postgres:
         postgres.upsert('csv')
@@ -144,8 +144,8 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
             write_rows_to_csv(rows, temp_csv)
 
             # Upload CSV to S3 so we can use dbtools to upsert.
-            upload_to_s3(temp_csv, 'citygeo-airflow-databridge2', 'staging/philly311/salesforce_cases_raw_pipeline_temp.csv')
-            upsert_to_postgres(temp_csv, 'philly311', 'salesforce_cases_raw', prod)
+            upload_to_s3(temp_csv, 'citygeo-airflow-databridge2', 'staging/citygeo/salesforce_cases_raw_pipeline_temp.csv')
+            upsert_to_postgres(temp_csv, DEST_DB_ACCOUNT, DEST_TABLE, prod)
 
             try:
                 os.remove(temp_csv)
@@ -155,8 +155,8 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
     ##########
     # Else, grab and insert rows based off our the latest modified date in our databridge tables
     else:
-        # Get date from raw table, assume "enterprise" table.
-        start_date_str = get_max_updated_date(cur, 'philly311', 'salesforce_cases_raw')
+        # Get date from raw table, assume "enterprise" table.   
+        start_date_str = get_max_updated_date(cur, 'citygeo', 'salesforce_cases_raw')
         start_date_dt = datetime.strptime(start_date_str, '%Y-%m-%d %H:%M:%S %z')
         converted_datetime = start_date_dt.astimezone(pytz.timezone('America/New_York'))
         sf_query = SF_QUERY + f' AND ({date_column} > {converted_datetime.isoformat()})'
@@ -173,8 +173,8 @@ def sync(prod, day_refresh, year_refresh, month_refresh, date_column):
         write_rows_to_csv(sf_rows_processed, temp_csv)
 
         # Upload CSV to S3 so we can use dbtools to upsert.
-        upload_to_s3(temp_csv, 'citygeo-airflow-databridge2', 'staging/philly311/salesforce_cases_raw_pipeline_temp.csv')
-        upsert_to_postgres(temp_csv, 'philly311', 'salesforce_cases_raw', prod)
+        upload_to_s3(temp_csv, 'citygeo-airflow-databridge2', 'staging/citygeo/salesforce_cases_raw_pipeline_temp.csv')
+        upsert_to_postgres(temp_csv, 'citygeo', 'salesforce_cases_raw', prod)
 
         try:
             os.remove(temp_csv)
