@@ -171,8 +171,8 @@ def sync(day, prod, batch_amount):
             if row[col]:
                 if 'datetime' in col and '+0000' in row[col]:
                     dt_obj = datetime.strptime(row[col], "%Y-%m-%d %H:%M:%S %z")
-                    local_dt_obj = obj.astimezone(pytz.timezone('US/Eastern'))
-                    row[col] = local_db_obj.strftime("%Y-%m-%d %H:%M:%S %z")
+                    local_dt_obj = dt_obj.astimezone(pytz.timezone('US/Eastern'))
+                    row[col] = local_dt_obj.strftime("%Y-%m-%d %H:%M:%S %z")
 
         # remove the shape field so we can replace it with SHAPE with the spatial reference key
         # and also store in 'wkt' var (well known text) so we can project it
