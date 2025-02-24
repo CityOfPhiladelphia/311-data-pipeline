@@ -9,7 +9,10 @@ import unicodedata
 
 # Setup global database vars/objects to be used between our two functions below.
 def connect_databridge(creds: dict, prod):
-    db2_creds = creds['databridge-v2/citygeo']
+    if 'databridge-v2/citygeo' in creds.keys():
+        db2_creds = creds['databridge-v2/citygeo']
+    elif 'databridge-v2/postgres' in creds.keys():
+        db2_creds = creds['databridge-v2/postgres']
     if prod:
         print('Connecting to PROD databridge database!')
         host = creds['databridge-v2/hostname']['host']
@@ -18,6 +21,7 @@ def connect_databridge(creds: dict, prod):
         host = creds['databridge-v2/hostname-testing']['host']
 
     conn = psycopg2.connect(f"user={db2_creds['login']} password={db2_creds['password']} host={host} dbname=databridge")
+    print('Connected.')
     return conn
 
 def create_dbtools_connector(creds: dict, prod):
