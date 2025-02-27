@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 
 def connect_to_databridge(prod):
-    return citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/citygeo', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
+    return citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/postgres', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
 
 def connect_to_salesforce():
     salesforce_creds = citygeo_secrets.connect_with_secrets(connect_salesforce, "salesforce API copy")
@@ -93,7 +93,9 @@ def main(prod):
 
         for CaseNumber in service_request_ids:
             # force test non-existent record
-            #CaseNumber = ['17094046'] 
+            #CaseNumber = ['17094046']
+            #CaseNumber = ['17094032']
+             
             if count % 10000 == 0:
                 print(f'At CaseNumber: {CaseNumber[0]}')
                 current_duration = datetime.now() - start
