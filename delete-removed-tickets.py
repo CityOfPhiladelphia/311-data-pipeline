@@ -119,9 +119,10 @@ def main(prod):
             # Increment our counter so the below conditional eventually triggers
             count += chunk_amount
             if count % 50000 == 0:
+                print(f'Loop count: {count}')
                 print(f'At CaseNumber: {CaseNumber_chunk[0]}')
                 current_duration = datetime.now() - start
-                print(f'Seconds from start: {current_duration.total_seconds()}')
+                print(f'Duration from script start: {current_duration}')
 
             # Construct a very large query selecting our chunk amount of CaseNumber's at a time. Much faster than doing 1 at a time.
             sf_existence_query = sf_base_query +  'AND CaseNumber in ('
@@ -140,89 +141,45 @@ def main(prod):
             # don't compare the other way of course, we only care about what they don't have, not what we don't have (yet).
             deleted_cases = set(CaseNumber_chunk) - set(sf_returned_cases)
 
-            if len(sf_returned_cases) == chunk_amount:
+            if not deleted_cases:
                 #print('No deleted cases in this chunk..')
                 # Give salesforce and databridge a little break, as a treat
                 sleep(2)
             else:
+                print(f'Deleted cases needing removal found:')
+                print(deleted_cases)
+                # make our delete/insert statements
+                # insert into deleted save table
+                deleted_insert_stmt = f'INSERT INTO citygeo.salesforce_cases_deleted SELECT * FROM citygeo.salesforce_cases_raw WHERE service_request_id IN ('
+                # Delete from the raw table.
+                del_stmt_1 = f'delete from citygeo.salesforce_cases_raw where service_request_id IN ('
+                # Delete from the viewer table.
+                del_stmt_2 = f'delete from viewer_philly311.salesforce_cases where service_request_id IN ('
                 for d in deleted_cases:
-                    print(f'{d} does not exist in SalesForce! Removing.')
+                    deleted_insert_stmt += f'{d},'
+                    del_stmt_1 += f'{d},'
+                    del_stmt_2 += f'{d},'
+                # End the query
+                deleted_insert_stmt = deleted_insert_stmt.removesuffix(',') + ')'
+                del_stmt_1 = del_stmt_1.removesuffix(',') + ')'
+                del_stmt_2 = del_stmt_2.removesuffix(',') + ')'
 
-                    deleted_upsert_stmt = f'''
-                        INSERT INTO citygeo.salesforce_cases_deleted (
-        service_request_id, status, status_notes, service_name, service_code,
-        description, agency_responsible, service_notice, address, zipcode, media_url, private_case,
-        description_full, subject, type_, requested_datetime, updated_datetime, expected_datetime,
-        closed_datetime, gdb_geomattr_data, shape, police_district, council_district_num, pinpoint_area,
-        parent_service_request_id, li_district, sanitation_district, service_request_origin, service_type,
-        record_id, vehicle_model, vehicle_make, vehicle_color, vehicle_body_style, vehicle_license_plate,
-        vehicle_license_plate_state
-        )
-        SELECT
-        service_request_id, status, status_notes, service_name, service_code,
-        description, agency_responsible, service_notice, address, zipcode, media_url, private_case,
-        description_full, subject, type_, requested_datetime, updated_datetime, expected_datetime,
-        closed_datetime, gdb_geomattr_data, shape, police_district, council_district_num, pinpoint_area,
-        parent_service_request_id, li_district, sanitation_district, service_request_origin, service_type,
-        record_id, vehicle_model, vehicle_make, vehicle_color, vehicle_body_style, vehicle_license_plate,
-        vehicle_license_plate_state
-        FROM citygeo.salesforce_cases_raw
-        WHERE service_request_id = {d}
-        ON CONFLICT (service_request_id)
-        DO UPDATE
-        SET 
-        status = EXCLUDED.status,
-        status_notes = EXCLUDED.status_notes,
-        service_name = EXCLUDED.service_name,
-        service_code = EXCLUDED.service_code,
-        description = EXCLUDED.description,
-        agency_responsible = EXCLUDED.agency_responsible,
-        service_notice = EXCLUDED.service_notice,
-        address = EXCLUDED.address,
-        zipcode = EXCLUDED.zipcode,
-        media_url = EXCLUDED.media_url,
-        private_case = EXCLUDED.private_case,
-        description_full = EXCLUDED.description_full,
-        subject = EXCLUDED.subject,
-        type_ = EXCLUDED.type_,
-        requested_datetime = EXCLUDED.requested_datetime,
-        updated_datetime = EXCLUDED.updated_datetime,
-        expected_datetime = EXCLUDED.expected_datetime,
-        closed_datetime = EXCLUDED.closed_datetime,
-        gdb_geomattr_data = EXCLUDED.gdb_geomattr_data,
-        shape = EXCLUDED.shape,
-        police_district = EXCLUDED.police_district,
-        council_district_num = EXCLUDED.council_district_num,
-        pinpoint_area = EXCLUDED.pinpoint_area,
-        parent_service_request_id = EXCLUDED.parent_service_request_id,
-        li_district = EXCLUDED.li_district,
-        sanitation_district = EXCLUDED.sanitation_district,
-        service_request_origin = EXCLUDED.service_request_origin,
-        service_type = EXCLUDED.service_type,
-        record_id = EXCLUDED.record_id,
-        vehicle_model = EXCLUDED.vehicle_model,
-        vehicle_make = EXCLUDED.vehicle_make,
-        vehicle_color = EXCLUDED.vehicle_color,
-        vehicle_body_style = EXCLUDED.vehicle_body_style,
-        vehicle_license_plate = EXCLUDED.vehicle_license_plate,
-        vehicle_license_plate_state = EXCLUDED.vehicle_license_plate_state;
-                        '''
-                    
-                    # Delete from the raw table.
-                    del_stmt_1 = f'delete from citygeo.salesforce_cases_raw where service_request_id = {d}'
-                    # Delete from the viewer table.
-                    del_stmt_2 = f'delete from viewer_philly311.salesforce_cases where service_request_id = {d}'
-                    
+                try:
                     # upsert deleted record into our deleted table first.
-                    cur.execute(deleted_upsert_stmt)
+                    cur.execute(deleted_insert_stmt)
                     dest_conn.commit()
                     # Then delete it from our destination tables.
                     cur.execute(del_stmt_1)
                     cur.execute(del_stmt_2)
                     dest_conn.commit()
+                except Exception as e:
+                    print(deleted_insert_stmt)
+                    print(del_stmt_1)
+                    print(del_stmt_2)
+                    raise e
 
-                    # Give salesforce and databridge a little break, as a treat
-                    sleep(2)
+                # Give salesforce and databridge a little break, as a treat
+                sleep(2)
 
                 
     if not dest_conn.closed:
