@@ -114,7 +114,7 @@ def main(prod):
         chunk_amount = 1000
         for CaseNumber_chunk in chunk_list(service_request_ids, chunk_amount):
             # QA check on ourselves, make sure there aren't any dupes in our own database.
-            assert len(set(CaseNumber_chunk)) == chunk_amount
+            assert len(set(CaseNumber_chunk)) == len(CaseNumber_chunk)
 
             # Increment our counter so the below conditional eventually triggers
             count += chunk_amount
