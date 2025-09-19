@@ -149,31 +149,37 @@ def main(prod):
                 print(f'Deleted cases needing removal found:')
                 print(deleted_cases)
                 # make our delete/insert statements
+                # delete from our deleted table first because they somehow keep already being there???
+                deleted_insert_stmt_1 = f'delete from citygeo.salesforce_cases_deleted WHERE service_request_id IN ('
                 # insert into deleted save table
-                deleted_insert_stmt = f'INSERT INTO citygeo.salesforce_cases_deleted SELECT * FROM citygeo.salesforce_cases_raw WHERE service_request_id IN ('
+                deleted_insert_stmt_2 = f'INSERT INTO citygeo.salesforce_cases_deleted SELECT * FROM citygeo.salesforce_cases_raw WHERE service_request_id IN ('
                 # Delete from the raw table.
                 del_stmt_1 = f'delete from citygeo.salesforce_cases_raw where service_request_id IN ('
                 # Delete from the viewer table.
                 del_stmt_2 = f'delete from viewer_philly311.salesforce_cases where service_request_id IN ('
                 for d in deleted_cases:
-                    deleted_insert_stmt += f'{d},'
+                    deleted_insert_stmt_1 += f'{d},'
+                    deleted_insert_stmt_2 += f'{d},'
                     del_stmt_1 += f'{d},'
                     del_stmt_2 += f'{d},'
                 # End the query
-                deleted_insert_stmt = deleted_insert_stmt.removesuffix(',') + ')'
+                deleted_insert_stmt_1 = deleted_insert_stmt_1.removesuffix(',') + ')'
+                deleted_insert_stmt_2 = deleted_insert_stmt_2.removesuffix(',') + ')'
                 del_stmt_1 = del_stmt_1.removesuffix(',') + ')'
                 del_stmt_2 = del_stmt_2.removesuffix(',') + ')'
 
                 try:
+                    cur.execute(deleted_insert_stmt_1)
                     # upsert deleted record into our deleted table first.
-                    cur.execute(deleted_insert_stmt)
+                    cur.execute(deleted_insert_stmt_2)
                     dest_conn.commit()
                     # Then delete it from our destination tables.
                     cur.execute(del_stmt_1)
                     cur.execute(del_stmt_2)
                     dest_conn.commit()
                 except Exception as e:
-                    print(deleted_insert_stmt)
+                    print(deleted_insert_stmt_1)
+                    print(deleted_insert_stmt_2)
                     print(del_stmt_1)
                     print(del_stmt_2)
                     raise e
