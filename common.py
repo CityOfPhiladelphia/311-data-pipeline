@@ -6,6 +6,13 @@ from databridge_etl_tools.postgres.postgres import Postgres, Postgres_Connector
 from arcgis import GIS
 import re
 import unicodedata
+import boto3
+import citygeo_secrets as cgs
+
+cgs.set_config(
+    keeper_dir="~", # Default
+    log_level='info' # Default
+    )
 
 # Setup global database vars/objects to be used between our two functions below.
 def connect_databridge(creds: dict, prod):
@@ -42,8 +49,6 @@ def create_dbtools_connector(creds: dict, prod):
     return connector
 
 
-import boto3
-import citygeo_secrets
 
 
 def connect_aws_s3(creds: dict):

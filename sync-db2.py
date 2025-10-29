@@ -25,6 +25,11 @@ from config import *
 import boto3
 from databridge_etl_tools.postgres.postgres import Postgres, Postgres_Connector
 
+cgs.set_config(
+    keeper_dir="~", # Default
+    log_level='info' # Default
+    )
+
 
 def connect_to_databridge(prod):
     return citygeo_secrets.connect_with_secrets(connect_databridge, 'databridge-v2/citygeo', 'databridge-v2/hostname', 'databridge-v2/hostname-testing', prod=prod)
