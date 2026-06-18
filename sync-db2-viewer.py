@@ -21,7 +21,7 @@ INSERT INTO viewer_philly311.salesforce_cases (
     service_notice, requested_datetime, updated_datetime,
     expected_datetime, closed_datetime, address, zipcode,
     media_url, lat, lon, subject, type_, description,
-    description_full, private_case, objectid
+    description_full, private_case, service_type, objectid
 )
 SELECT 
     service_request_id, status, shape, status_notes,
@@ -29,7 +29,7 @@ SELECT
     service_notice, requested_datetime, updated_datetime,
     expected_datetime, closed_datetime, address, zipcode,
     media_url, lat, lon, subject, type_, description,
-    description_full, private_case, sde.next_rowid('viewer_philly311', 'salesforce_cases')
+    description_full, private_case, service_type, sde.next_rowid('viewer_philly311', 'salesforce_cases')
 FROM citygeo.salesforce_cases rawview
 WHERE rawview.updated_datetime > (
     SELECT COALESCE(MAX(updated_datetime), '1970-01-01')
@@ -57,6 +57,7 @@ ON CONFLICT (service_request_id) DO UPDATE SET
     description = EXCLUDED.description,
     description_full = EXCLUDED.description_full,
     private_case = EXCLUDED.private_case,
+    service_type = EXCLUDED.service_type,
     objectid = sde.next_rowid('viewer_philly311', 'salesforce_cases');
         '''
 
