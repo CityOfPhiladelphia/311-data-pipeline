@@ -441,7 +441,7 @@ def sync(day, prod, batch_amount):
     expected_headers = ['objectid','service_request_id','gdb_geomattr_data','status','shape','status_notes',
                         'service_name','service_code','agency_responsible','service_notice','requested_datetime',
                         'updated_datetime','expected_datetime','closed_datetime','address','zipcode','media_url',
-                        'lat','lon','subject','type_','description','description_full','private_case']
+                        'lat','lon','subject','type_','description','description_full','private_case','service_type']
 
     headers_stmt = f'''
         SELECT column_name
